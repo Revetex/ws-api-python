@@ -254,7 +254,7 @@ class WealthsimpleAPIBase:
 
 class WealthsimpleAPI(WealthsimpleAPIBase):
     def get_accounts(self, open_only=True):
-        filter_fn = lambda account: account.get('status') == 'open' if open_only else None
+        filter_fn = (lambda account: account.get('status') == 'open') if open_only else None
 
         # Call GraphQL and apply filter if necessary
         return self.do_graphql_query(
@@ -292,7 +292,7 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
         end_date = (datetime.now() + timedelta(hours=23, minutes=59, seconds=59, milliseconds=999))
 
         # Construct filter function to ignore rejected activities
-        filter_fn = lambda activity: activity.get('status', '') == None or 'rejected' not in activity.get('status', '') if ignore_rejected else None
+        filter_fn = (lambda activity: activity.get('status', '') is None or 'rejected' not in activity.get('status', '')) if ignore_rejected else None
 
         # Fetch activities using GraphQL query
         return self.do_graphql_query(
