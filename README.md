@@ -64,22 +64,22 @@ class WSApiTest:
         # 4. Use the API object to access your WS accounts
         accounts = ws.get_accounts()
         for account in accounts:
-            value = account['financials']['currentCombined']['netLiquidationValue']['amount']
-    
-            # Account details
-            print(
-                f"Account: [{account['branch']}:{account['id']}] {account['nickname']} {account['type']}:{account['unifiedAccountType']} {account['currency']}")
-    
+            print(f"Account: {account['description']} ({account['number']})")
+            if account['description'] == account['unifiedAccountType']:
+                # This is an "unknown" account, for which description is generic; please open an issue on https://github.com/gboudreau/ws-api-python/issues and include the following:
+                print(f"    Unknown account: {account}")
+
             if account['currency'] == 'CAD':
-                print(f"  Net worth: {value} {account['currency']}")
-    
+                value = account['financials']['currentCombined']['netLiquidationValue']['amount']
+                print(f"  Net worth: {value} {account['currency']}")    
             # Note: For USD accounts, value is the CAD value converted to USD
             # For USD accounts, only the balance & positions are relevant
     
             # Cash and positions balances
             balances = ws.get_account_balances(account['id'])
             cash_balance_key = 'sec-c-usd' if account['currency'] == 'USD' else 'sec-c-cad'
-            print(f"  Available (cash) balance: {balances.get(cash_balance_key, 0)} {account['currency']}")
+            cash_balance = float(balances.get(cash_balance_key, 0))
+            print(f"  Available (cash) balance: {cash_balance} {account['currency']}")
     
             if len(balances) > 1:
                 print("  Other positions:")
@@ -94,30 +94,22 @@ class WSApiTest:
             if acts:
                 print("  Transactions:")
                 acts.reverse()  # Activities are sorted by OCCURRED_AT_DESC by default
-    
-            for act in acts:
-                what = ''
-                if act['status'] == 'FILLED':
-                    if act['type'] == 'DIY_SELL':
+
+                for act in acts:
+                    if act['status'] == 'FILLED' and (act['type'] == 'DIY_SELL' or act['type'] == 'DIY_BUY'):
                         stock = self.get_stock_info(ws, act['securityId'])
-                        what = f"= Sold {float(act['assetQuantity'])} x [{act['securityId']}] {stock['symbol']} @ {float(act['amount']) / float(act['assetQuantity'])}"
-                    elif act['type'] == 'DIY_BUY':
-                        stock = self.get_stock_info(ws, act['securityId'])
-                        what = f"= Bought {float(act['assetQuantity'])} x [{act['securityId']}] {stock['symbol']} @ {float(act['amount']) / float(act['assetQuantity'])}"
-                elif act['type'] == 'INSTITUTIONAL_TRANSFER_INTENT':
-                    what = 'Account transfer from another institution'
-                elif act.get('subType') == 'TRANSFER_FEE_REFUND':
-                    what = 'Refund of account transfer fees'
-                elif account['branch'] == 'TR':
-                    what = 'Unknown transaction type'
-    
-                # Print transaction details
-                print(
-                    f"  - [{datetime.strptime(act['occurredAt'].replace(':', ''), '%Y-%m-%dT%H%M%S.%f%z')}] [{act['canonicalId']}] {act['type']}:{act.get('subType')} "
-                    f"{'+' if act['amountSign'] == 'positive' else '-'}{act['amount']} {act['currency']} {what}")
-    
-                if what == 'Unknown transaction type':
-                    print(f"    {act}")
+                        act['description'] = act['description'].replace(f"[{act['securityId']}]", f"{stock['primaryExchange']}:{stock['symbol']}")
+                        if act['type'] == 'DIY_BUY':
+                            act['amountSign'] = 'negative'
+        
+                    # Print transaction details
+                    print(
+                        f"  - [{datetime.strptime(act['occurredAt'].replace(':', ''), '%Y-%m-%dT%H%M%S.%f%z')}] [{act['canonicalId']}] {act['description']} "
+                        f"{'+' if act['amountSign'] == 'positive' else '-'}{act['amount']} {act['currency']}")
+
+                    if act['description'] == f"{act['type']}: {act['subType']}":
+                        # This is an "unknown" transaction, for which description is generic; please open an issue on https://github.com/gboudreau/ws-api-python/issues and include the following:
+                        print(f"    Unknown activity: {act}")
     
             print()
 

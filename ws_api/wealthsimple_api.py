@@ -21,6 +21,8 @@ class WealthsimpleAPIBase:
         'FetchSecurityHistoricalQuotes': "query FetchSecurityHistoricalQuotes($id: ID!, $timerange: String! = \"1d\") {\n  security(id: $id) {\n    id\n    historicalQuotes(timeRange: $timerange) {\n      ...HistoricalQuote\n      __typename\n    }\n    __typename\n  }\n}\n\nfragment HistoricalQuote on HistoricalQuote {\n  adjustedPrice\n  currency\n  date\n  securityId\n  time\n  __typename\n}",
         'FetchAccountsWithBalance': "query FetchAccountsWithBalance($ids: [String!]!, $type: BalanceType!) {\n  accounts(ids: $ids) {\n    ...AccountWithBalance\n    __typename\n  }\n}\n\nfragment AccountWithBalance on Account {\n  id\n  custodianAccounts {\n    id\n    financials {\n      ... on CustodianAccountFinancialsSo {\n        balance(type: $type) {\n          ...Balance\n          __typename\n        }\n        __typename\n      }\n      __typename\n    }\n    __typename\n  }\n  __typename\n}\n\nfragment Balance on Balance {\n  quantity\n  securityId\n  __typename\n}",
         'FetchSecurityMarketData': "query FetchSecurityMarketData($id: ID!) {\n  security(id: $id) {\n    id\n    ...SecurityMarketData\n    __typename\n  }\n}\n\nfragment SecurityMarketData on Security {\n  id\n  allowedOrderSubtypes\n  marginRates {\n    ...MarginRates\n    __typename\n  }\n  fundamentals {\n    avgVolume\n    high52Week\n    low52Week\n    yield\n    peRatio\n    marketCap\n    currency\n    description\n    __typename\n  }\n  quote {\n    bid\n    ask\n    open\n    high\n    low\n    volume\n    askSize\n    bidSize\n    last\n    lastSize\n    quotedAsOf\n    quoteDate\n    amount\n    previousClose\n    __typename\n  }\n  stock {\n    primaryExchange\n    primaryMic\n    name\n    symbol\n    __typename\n  }\n  __typename\n}\n\nfragment MarginRates on MarginRates {\n  clientMarginRate\n  __typename\n}",
+        'FetchFundsTransfer': "query FetchFundsTransfer($id: ID!) {\n  fundsTransfer: funds_transfer(id: $id, include_cancelled: true) {\n    ...FundsTransfer\n    __typename\n  }\n}\n\nfragment FundsTransfer on FundsTransfer {\n  id\n  status\n  cancellable\n  rejectReason: reject_reason\n  schedule {\n    id\n    __typename\n  }\n  source {\n    ...BankAccountOwner\n    __typename\n  }\n  destination {\n    ...BankAccountOwner\n    __typename\n  }\n  __typename\n}\n\nfragment BankAccountOwner on BankAccountOwner {\n  bankAccount: bank_account {\n    ...BankAccount\n    __typename\n  }\n  __typename\n}\n\nfragment BankAccount on BankAccount {\n  id\n  accountName: account_name\n  corporate\n  createdAt: created_at\n  currency\n  institutionName: institution_name\n  jurisdiction\n  nickname\n  type\n  updatedAt: updated_at\n  verificationDocuments: verification_documents {\n    ...BankVerificationDocument\n    __typename\n  }\n  verifications {\n    ...BankAccountVerification\n    __typename\n  }\n  ...CaBankAccount\n  ...UsBankAccount\n  __typename\n}\n\nfragment CaBankAccount on CaBankAccount {\n  accountName: account_name\n  accountNumber: account_number\n  __typename\n}\n\nfragment UsBankAccount on UsBankAccount {\n  accountName: account_name\n  accountNumber: account_number\n  __typename\n}\n\nfragment BankVerificationDocument on VerificationDocument {\n  id\n  acceptable\n  updatedAt: updated_at\n  createdAt: created_at\n  documentId: document_id\n  documentType: document_type\n  rejectReason: reject_reason\n  reviewedAt: reviewed_at\n  reviewedBy: reviewed_by\n  __typename\n}\n\nfragment BankAccountVerification on BankAccountVerification {\n  custodianProcessedAt: custodian_processed_at\n  custodianStatus: custodian_status\n  document {\n    ...BankVerificationDocument\n    __typename\n  }\n  __typename\n}",
+        'FetchInstitutionalTransfer': "query FetchInstitutionalTransfer($id: ID!) {\n  accountTransfer(id: $id) {\n    ...InstitutionalTransfer\n    __typename\n  }\n}\n\nfragment InstitutionalTransfer on InstitutionalTransfer {\n  id\n  accountId: account_id\n  state\n  documentId: document_id\n  documentType: document_type\n  expectedCompletionDate: expected_completion_date\n  timelineExpectation: timeline_expectation {\n    lowerBound: lower_bound\n    upperBound: upper_bound\n    __typename\n  }\n  estimatedCompletionMaximum: estimated_completion_maximum\n  estimatedCompletionMinimum: estimated_completion_minimum\n  institutionName: institution_name\n  transferStatus: external_state\n  redactedInstitutionAccountNumber: redacted_institution_account_number\n  expectedValue: expected_value\n  transferType: transfer_type\n  cancellable\n  pdfUrl: pdf_url\n  clientVisibleState: client_visible_state\n  shortStatusDescription: short_status_description\n  longStatusDescription: long_status_description\n  progressPercentage: progress_percentage\n  type\n  rolloverType: rollover_type\n  autoSignatureEligible: auto_signature_eligible\n  parentInstitution: parent_institution {\n    id\n    name\n    __typename\n  }\n  stateHistories: state_histories {\n    id\n    state\n    notes\n    transitionSubmittedBy: transition_submitted_by\n    transitionedAt: transitioned_at\n    transitionCode: transition_code\n    __typename\n  }\n  transferFeeReimbursement: transfer_fee_reimbursement {\n    id\n    feeAmount: fee_amount\n    __typename\n  }\n  docusignSentViaEmail: docusign_sent_via_email\n  clientAccountType: client_account_type\n  primaryClientIdentityId: primary_client_identity_id\n  primaryOwnerSigned: primary_owner_signed\n  secondaryOwnerSigned: secondary_owner_signed\n  __typename\n}",
     }
 
     def __init__(self, sess: Optional[WSAPISession] = None):
@@ -253,20 +255,60 @@ class WealthsimpleAPIBase:
         return ws
 
 class WealthsimpleAPI(WealthsimpleAPIBase):
-    def get_accounts(self, open_only=True):
-        filter_fn = (lambda account: account.get('status') == 'open') if open_only else None
+    def __init__(self, sess: WSAPISession = None):
+        super().__init__(sess)
+        self.account_cache = {}
 
-        # Call GraphQL and apply filter if necessary
-        return self.do_graphql_query(
-            'FetchAllAccountFinancials',
-            {
-                'pageSize': 25,
-                'identityId': self.get_token_info().get('identity_canonical_id'),
-            },
-            'identity.accounts.edges',
-            'array',
-            filter_fn=filter_fn,
-        )
+    def get_accounts(self, open_only=True, use_cache=True):
+        cache_key = 'open' if open_only else 'all'
+        if not use_cache or cache_key not in self.account_cache:
+            filter_fn = (lambda acc: acc.get('status') == 'open') if open_only else None
+
+            accounts = self.do_graphql_query(
+                'FetchAllAccountFinancials',
+                {
+                    'pageSize': 25,
+                    'identityId': self.get_token_info().get('identity_canonical_id'),
+                },
+                'identity.accounts.edges',
+                'array',
+                filter_fn=filter_fn,
+            )
+            for account in accounts:
+                self._account_add_description(account)
+            self.account_cache[cache_key] = accounts
+        return self.account_cache[cache_key]
+
+    @staticmethod
+    def _account_add_description(account):
+        account['number'] = account['id']
+        # This is the account number visible in the WS app:
+        for ca in account['custodianAccounts']:
+            if (ca['branch'] in ['WS', 'TR']) and ca['status'] == 'open':
+                account['number'] = ca['id']
+
+        # Default
+        account['description'] = account['unifiedAccountType']
+
+        if account.get('nickname'):
+            account['description'] = account['nickname']
+        elif account['unifiedAccountType'] == 'CASH':
+            account['description'] = "Cash: joint" if account['accountOwnerConfiguration'] == 'MULTI_OWNER' else "Cash"
+        elif account['unifiedAccountType'] == 'SELF_DIRECTED_RRSP':
+            account['description'] = f"RRSP: self-directed - {account['currency']}"
+        elif account['unifiedAccountType'] == 'MANAGED_RRSP':
+            account['description'] = f"RRSP: managed - {account['currency']}"
+        elif account['unifiedAccountType'] == 'SELF_DIRECTED_TFSA':
+            account['description'] = f"TFSA: self-directed - {account['currency']}"
+        elif account['unifiedAccountType'] == 'MANAGED_TFSA':
+            account['description'] = f"TFSA: managed - {account['currency']}"
+        elif account['unifiedAccountType'] == 'SELF_DIRECTED_JOINT_NON_REGISTERED':
+            account['description'] = "Non-registered: self-directed - joint"
+        elif account['unifiedAccountType'] == 'MANAGED_JOINT':
+            account['description'] = "Non-registered: managed - joint"
+        elif account['unifiedAccountType'] == 'SELF_DIRECTED_CRYPTO':
+            account['description'] = "Crypt"
+        # TODO: Add other types as needed
 
     def get_account_balances(self, account_id):
         accounts = self.do_graphql_query(
@@ -294,8 +336,7 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
         # Construct filter function to ignore rejected activities
         filter_fn = (lambda activity: activity.get('status', '') is None or 'rejected' not in activity.get('status', '')) if ignore_rejected else None
 
-        # Fetch activities using GraphQL query
-        return self.do_graphql_query(
+        activities = self.do_graphql_query(
             'FetchActivityFeedItems',
             {
                 'orderBy': order_by,
@@ -308,6 +349,80 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
             'activityFeedItems.edges',
             'array',
             filter_fn=filter_fn,
+        )
+
+        for act in activities:
+            self._activity_add_description(act)
+
+        return activities
+
+    def _activity_add_description(self, act):
+        act['description'] = f"{act['type']}: {act['subType']}"
+
+        if act['type'] == 'INTERNAL_TRANSFER':
+            accounts = self.get_accounts(False)
+            matching = [acc for acc in accounts if acc['id'] == act['opposingAccountId']]
+            target_account = matching.pop() if matching else None
+            account_description = (
+                f"{target_account['description']} ({target_account['number']})"
+                if target_account else
+                act['opposingAccountId']
+            )
+            if act['subType'] == 'SOURCE':
+                act['description'] = f"Transfer out: Transfer to Wealthsimple {account_description}"
+            else:
+                act['description'] = f"Transfer in: Transfer from Wealthsimple {account_description}"
+
+        elif act['type'] in ['DIY_BUY', 'DIY_SELL']:
+            verb = act['subType'].replace('_', ' ').capitalize()
+            action = 'buy' if act['type'] == 'DIY_BUY' else 'sell'
+            status = act['status'].replace('_', ' ').lower()
+            act['description'] = (
+                f"{verb} {action}: {status} {float(act['assetQuantity'])} x "
+                f"[{act['securityId']}] @ {float(act['amount']) / float(act['assetQuantity'])}"
+            )
+
+        elif act['type'] == 'DEPOSIT' and act['subType'] in ['E_TRANSFER', 'E_TRANSFER_FUNDING']:
+            act['description'] = (
+                f"Deposit: Interac e-transfer from {act['eTransferName']} {act['eTransferEmail']}"
+            )
+
+        elif act['type'] == 'DEPOSIT' and act['subType'] == 'EFT':
+            details = self.get_etf_details(act['externalCanonicalId'])
+            bank_account = details['source']['bankAccount']
+            nickname = bank_account.get('nickname', bank_account['accountName'])
+            act['description'] = (
+                f"Deposit: EFT from {nickname} {bank_account['accountNumber']}"
+            )
+
+        elif act['type'] == 'REFUND' and act['subType'] == 'TRANSFER_FEE_REFUND':
+            act['description'] = "Reimbursement: account transfer fee"
+
+        elif act['type'] == 'INSTITUTIONAL_TRANSFER_INTENT' and act['subType'] == 'TRANSFER_IN':
+            details = self.get_transfer_details(act['externalCanonicalId'])
+            verb = details['transferType'].replace('_', '-').capitalize()
+            act['description'] = (
+                f"Institutional transfer: {verb} {details['clientAccountType'].upper()} "
+                f"account transfer from {details['institutionName']} "
+                f"****{details['redactedInstitutionAccountNumber']}"
+            )
+
+        # TODO: Add other types as needed
+
+    def get_etf_details(self, funding_id):
+        return self.do_graphql_query(
+            'FetchFundsTransfer',
+            {'id': funding_id},
+            'fundsTransfer',
+            'object',
+        )
+
+    def get_transfer_details(self, transfer_id):
+        return self.do_graphql_query(
+            'FetchInstitutionalTransfer',
+            {'id': transfer_id},
+            'accountTransfer',
+            'object',
         )
 
     def get_security_market_data(self, security_id):
