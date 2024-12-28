@@ -390,7 +390,9 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
         elif act['type'] == 'DEPOSIT' and act['subType'] == 'EFT':
             details = self.get_etf_details(act['externalCanonicalId'])
             bank_account = details['source']['bankAccount']
-            nickname = bank_account.get('nickname', bank_account['accountName'])
+            nickname = bank_account.get('nickname')
+            if not nickname:
+                nickname = bank_account['accountName']
             act['description'] = (
                 f"Deposit: EFT from {nickname} {bank_account['accountNumber']}"
             )
