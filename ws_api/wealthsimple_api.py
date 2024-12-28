@@ -387,14 +387,17 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
                 f"Deposit: Interac e-transfer from {act['eTransferName']} {act['eTransferEmail']}"
             )
 
-        elif act['type'] == 'DEPOSIT' and act['subType'] == 'EFT':
+        elif act['subType'] == 'EFT':
             details = self.get_etf_details(act['externalCanonicalId'])
-            bank_account = details['source']['bankAccount']
+            type_ = act['type'].lower().capitalize()
+            direction = 'from' if act['type'] == 'DEPOSIT' else 'to'
+            prop = 'source' if act['type'] == 'DEPOSIT' else 'destination'
+            bank_account = details[prop]['bankAccount']
             nickname = bank_account.get('nickname')
             if not nickname:
                 nickname = bank_account['accountName']
             act['description'] = (
-                f"Deposit: EFT from {nickname} {bank_account['accountNumber']}"
+                f"{type_}: EFT {direction} {nickname} {bank_account['accountNumber']}"
             )
 
         elif act['type'] == 'REFUND' and act['subType'] == 'TRANSFER_FEE_REFUND':
