@@ -382,9 +382,10 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
                 f"[{act['securityId']}] @ {float(act['amount']) / float(act['assetQuantity'])}"
             )
 
-        elif act['type'] == 'DEPOSIT' and act['subType'] in ['E_TRANSFER', 'E_TRANSFER_FUNDING']:
+        elif act['type'] in ['DEPOSIT', 'WITHDRAWAL'] and act['subType'] in ['E_TRANSFER', 'E_TRANSFER_FUNDING']:
+            direction = 'from' if act['type'] == 'DEPOSIT' else 'to'
             act['description'] = (
-                f"Deposit: Interac e-transfer from {act['eTransferName']} {act['eTransferEmail']}"
+                f"Deposit: Interac e-transfer {direction} {act['eTransferName']} {act['eTransferEmail']}"
             )
 
         elif act['subType'] == 'EFT':
