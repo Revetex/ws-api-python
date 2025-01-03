@@ -412,6 +412,9 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
                 f"****{details['redactedInstitutionAccountNumber']}"
             )
 
+        elif act['type'] == 'INTEREST':
+            act['description'] = "Interest"
+
         # TODO: Add other types as needed
 
     def get_etf_details(self, funding_id):
