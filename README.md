@@ -61,6 +61,20 @@ class WSApiTest:
         ws = WealthsimpleAPI.from_token(session, persist_session_fct)
         # persist_session_fct is needed here too, because the session may be updated if the access token expired, and thus this function will be called to save the new session
         
+        # Optionally define functions to cache market data, if you want transactions' descriptions and accounts balances to show the security's symbol instead of its ID
+        # eg. sec-s-e7947deb977341ff9f0ddcf13703e9a6 => TSX:XEQT
+        def sec_info_getter_fn(ws_security_id: str):
+            cache_file_path = os.path.join(tempfile.gettempdir(), f"ws-api-{ws_security_id}.json")
+            if os.path.exists(cache_file_path):
+                return json.load(open(cache_file_path, 'r'))
+            return None
+        def sec_info_setter_fn(ws_security_id: str, market_data: object):
+            cache_file_path = os.path.join(tempfile.gettempdir(), f"ws-api-{ws_security_id}.json")
+            # noinspection PyTypeChecker
+            json.dump(market_data, open(cache_file_path, 'w'))
+            return market_data
+        ws.set_security_market_data_cache(sec_info_getter_fn, sec_info_setter_fn)
+        
         # 4. Use the API object to access your WS accounts
         accounts = ws.get_accounts()
         for account in accounts:
@@ -83,11 +97,10 @@ class WSApiTest:
     
             if len(balances) > 1:
                 print("  Other positions:")
-                for sec_id, bal in balances.items():
-                    if sec_id in ['sec-c-cad', 'sec-c-usd']:
+                for security, bal in balances.items():
+                    if security in ['sec-c-cad', 'sec-c-usd']:
                         continue
-                    stock = self.get_stock_info(ws, sec_id)
-                    print(f"  - {stock['primaryExchange']}:{stock['symbol']} x {bal}")
+                    print(f"  - {security} x {bal}")
     
             # Fetch activities (transactions)
             acts = ws.get_activities(account['id'])
@@ -96,11 +109,8 @@ class WSApiTest:
                 acts.reverse()  # Activities are sorted by OCCURRED_AT_DESC by default
 
                 for act in acts:
-                    if act['status'] == 'FILLED' and (act['type'] == 'DIY_SELL' or act['type'] == 'DIY_BUY'):
-                        stock = self.get_stock_info(ws, act['securityId'])
-                        act['description'] = act['description'].replace(f"[{act['securityId']}]", f"{stock['primaryExchange']}:{stock['symbol']}")
-                        if act['type'] == 'DIY_BUY':
-                            act['amountSign'] = 'negative'
+                    if act['type'] == 'DIY_BUY':
+                        act['amountSign'] = 'negative'
         
                     # Print transaction details
                     print(
@@ -112,31 +122,6 @@ class WSApiTest:
                         print(f"    Unknown activity: {act}")
     
             print()
-
-    # This function is used to get a security (eg. stock) info, from a given security ID. This is useful to get a human-readable name for the security.
-    # eg. sec-s-e7947deb977341ff9f0ddcf13703e9a6 => XEQT
-    @staticmethod
-    def get_stock_info(ws: WealthsimpleAPI, ws_security_id: str):
-        # Instead of querying the WS API every time you need to find the symbol of a security ID, you should cache the results in a local storage (eg. database)
-        # We'll just save JSON files in the temp directory in this example.
-        temp_dir = tempfile.gettempdir()
-        cache_file_path = os.path.join(temp_dir, f"ws-api-{ws_security_id}.json")
-    
-        # Try to read from cache
-        if os.path.exists(cache_file_path):
-            with open(cache_file_path, 'r') as file:
-                market_data = json.load(file)
-            return market_data['stock']
-    
-        # If not found in cache, make an API request
-        market_data = ws.get_security_market_data(ws_security_id)
-    
-        # Cache the result for future use
-        with open(cache_file_path, 'w') as file:
-            # noinspection PyTypeChecker
-            json.dump(market_data, file)
-    
-        return market_data['stock']
 
 if __name__ == "__main__":
     WSApiTest().main()

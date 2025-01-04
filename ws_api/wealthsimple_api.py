@@ -26,6 +26,8 @@ class WealthsimpleAPIBase:
     }
 
     def __init__(self, sess: Optional[WSAPISession] = None):
+        self.security_market_data_cache_getter = None
+        self.security_market_data_cache_setter = None
         self.session = WSAPISession()
         self.start_session(sess)
 
@@ -307,7 +309,7 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
         elif account['unifiedAccountType'] == 'MANAGED_JOINT':
             account['description'] = "Non-registered: managed - joint"
         elif account['unifiedAccountType'] == 'SELF_DIRECTED_CRYPTO':
-            account['description'] = "Crypt"
+            account['description'] = "Crypto"
         # TODO: Add other types as needed
 
     def get_account_balances(self, account_id):
@@ -325,7 +327,10 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
         balances = {}
         for account in accounts[0]['custodianAccounts']:
             for balance in account['financials']['balance']:
-                balances[balance['securityId']] = balance['quantity']
+                security = balance['securityId']
+                if security != 'sec-c-cad' and security != 'sec-c-usd':
+                    security = self.security_id_to_symbol(security)
+                balances[security] = balance['quantity']
 
         return balances
 
@@ -377,9 +382,10 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
             verb = act['subType'].replace('_', ' ').capitalize()
             action = 'buy' if act['type'] == 'DIY_BUY' else 'sell'
             status = act['status'].replace('_', ' ').lower()
+            security = self.security_id_to_symbol(act['securityId'])
             act['description'] = (
                 f"{verb} {action}: {status} {float(act['assetQuantity'])} x "
-                f"[{act['securityId']}] @ {float(act['amount']) / float(act['assetQuantity'])}"
+                f"{security} @ {float(act['amount']) / float(act['assetQuantity'])}"
             )
 
         elif act['type'] in ['DEPOSIT', 'WITHDRAWAL'] and act['subType'] in ['E_TRANSFER', 'E_TRANSFER_FUNDING']:
@@ -416,7 +422,20 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
         elif act['type'] == 'INTEREST':
             act['description'] = "Interest"
 
+        elif act['type'] == 'DIVIDEND':
+            security = self.security_id_to_symbol(act['securityId'])
+            act['description'] = f"Dividend: {security}"
+
         # TODO: Add other types as needed
+
+    def security_id_to_symbol(self, security_id: str) -> str:
+        security_symbol = f"[{security_id}]"
+        if self.security_market_data_cache_getter:
+            market_data = self.get_security_market_data(security_id)
+            if market_data and 'stock' in market_data and market_data['stock']:
+                stock = market_data['stock']
+                security_symbol = f"{stock['primaryExchange']}:{stock['symbol']}"
+        return security_symbol
 
     def get_etf_details(self, funding_id):
         return self.do_graphql_query(
@@ -434,14 +453,30 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
             'object',
         )
 
-    def get_security_market_data(self, security_id):
-        # Fetch security market data using GraphQL query
-        return self.do_graphql_query(
+    def set_security_market_data_cache(self, security_market_data_cache_getter: callable, security_market_data_cache_setter: callable):
+        self.security_market_data_cache_getter = security_market_data_cache_getter
+        self.security_market_data_cache_setter = security_market_data_cache_setter
+
+    def get_security_market_data(self, security_id: str, use_cache: bool = True):
+        if not self.security_market_data_cache_getter or not self.security_market_data_cache_setter:
+            use_cache = False
+
+        if use_cache:
+            cached_value = self.security_market_data_cache_getter(security_id)
+            if cached_value:
+                return cached_value
+
+        value = self.do_graphql_query(
             'FetchSecurityMarketData',
             {'id': security_id},
             'security',
             'object',
         )
+
+        if use_cache:
+            value = self.security_market_data_cache_setter(security_id, value)
+
+        return value
 
     def search_security(self, query):
         # Fetch security search results using GraphQL query
