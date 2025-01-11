@@ -338,8 +338,10 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
         # Calculate the end date for the condition
         end_date = (datetime.now() + timedelta(hours=23, minutes=59, seconds=59, milliseconds=999))
 
-        # Construct filter function to ignore rejected activities
-        filter_fn = (lambda activity: activity.get('status', '') is None or 'rejected' not in activity.get('status', '')) if ignore_rejected else None
+        # Filter function to ignore rejected/cancelled activities
+        def filter_fn(activity):
+            status = (activity.get('status', '') or '').lower()
+            return status == '' or ('rejected' not in status and 'cancelled' not in status)
 
         activities = self.do_graphql_query(
             'FetchActivityFeedItems',
@@ -353,7 +355,7 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
             },
             'activityFeedItems.edges',
             'array',
-            filter_fn=filter_fn,
+            filter_fn = filter_fn if ignore_rejected else None,
         )
 
         for act in activities:
