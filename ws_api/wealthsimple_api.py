@@ -385,10 +385,9 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
         elif act['type'] in ['DIY_BUY', 'DIY_SELL']:
             verb = act['subType'].replace('_', ' ').capitalize()
             action = 'buy' if act['type'] == 'DIY_BUY' else 'sell'
-            status = act['status'].replace('_', ' ').lower()
             security = self.security_id_to_symbol(act['securityId'])
             act['description'] = (
-                f"{verb} {action}: {status} {float(act['assetQuantity'])} x "
+                f"{verb}: {action} {float(act['assetQuantity'])} x "
                 f"{security} @ {float(act['amount']) / float(act['assetQuantity'])}"
             )
 
