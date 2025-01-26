@@ -397,6 +397,10 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
                 f"Deposit: Interac e-transfer {direction} {act['eTransferName']} {act['eTransferEmail']}"
             )
 
+        elif act['type'] == 'DEPOSIT' and act['subType'] == 'PAYMENT_CARD_TRANSACTION':
+            type_ = act['type'].lower().capitalize()
+            act['description'] = f"{type_}: Debit card funding"
+
         elif act['subType'] == 'EFT':
             details = self.get_etf_details(act['externalCanonicalId'])
             type_ = act['type'].lower().capitalize()
@@ -423,11 +427,17 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
             )
 
         elif act['type'] == 'INTEREST':
-            act['description'] = "Interest"
+            if act['subType'] == 'FPL_INTEREST':
+                act['description'] = "Stock Lending Earnings"
+            else:
+                act['description'] = "Interest"
 
         elif act['type'] == 'DIVIDEND':
             security = self.security_id_to_symbol(act['securityId'])
             act['description'] = f"Dividend: {security}"
+
+        elif act['type'] == 'FUNDS_CONVERSION':
+            act['description'] = f"Funds converted: {act['currency']} from {'USD' if act['currency'] == 'CAD' else 'CAD'}"
 
         # TODO: Add other types as needed
 
