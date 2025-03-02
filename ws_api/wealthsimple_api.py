@@ -147,14 +147,17 @@ class WealthsimpleAPIBase:
 
         raise ManualLoginRequired("OAuth token invalid and cannot be refreshed.")
 
+    SCOPE_READ_ONLY = 'invest.read trade.read tax.read'
+    SCOPE_READ_WRITE = 'invest.read trade.read tax.read invest.write trade.write tax.write'
+
     def login_internal(self, username: str, password: str, otp_answer: str = None,
-                       persist_session_fct: callable = None) -> WSAPISession:
+                       persist_session_fct: callable = None, scope: str = SCOPE_READ_ONLY) -> WSAPISession:
         data = {
             'grant_type': 'password',
             'username': username,
             'password': password,
             'skip_provision': 'true',
-            'scope': 'invest.read invest.write trade.read trade.write tax.read tax.write',
+            'scope': scope,
             'client_id': self.session.client_id,
             'otp_claim': None,
         }
@@ -246,9 +249,9 @@ class WealthsimpleAPIBase:
         return self.session.token_info
 
     @staticmethod
-    def login(username: str, password: str, otp_answer: str = None, persist_session_fct: callable = None):
+    def login(username: str, password: str, otp_answer: str = None, persist_session_fct: callable = None, scope: str = SCOPE_READ_ONLY):
         ws = WealthsimpleAPI()
-        return ws.login_internal(username, password, otp_answer, persist_session_fct)
+        return ws.login_internal(username, password, otp_answer, persist_session_fct, scope)
 
     @staticmethod
     def from_token(sess: WSAPISession, persist_session_fct: callable = None):
