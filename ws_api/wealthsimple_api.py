@@ -442,6 +442,9 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
         elif act['type'] == 'FUNDS_CONVERSION':
             act['description'] = f"Funds converted: {act['currency']} from {'USD' if act['currency'] == 'CAD' else 'CAD'}"
 
+        elif act['type'] == 'NON_RESIDENT_TAX':
+            act['description'] = "Non-resident tax"
+
         # TODO: Add other types as needed
 
     def security_id_to_symbol(self, security_id: str) -> str:

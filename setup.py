@@ -3,7 +3,7 @@ import setuptools
 setuptools.setup(
     name = 'WS-API',
     packages = ['ws_api'],
-    version = '0.8.0',
+    version = '0.9.0',
     license = 'GPL-3.0',
     description = 'Access your Wealthsimple account using their (GraphQL) API.',
     author = 'Guillaume Boudreau',
