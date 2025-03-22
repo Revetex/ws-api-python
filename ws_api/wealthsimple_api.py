@@ -345,8 +345,9 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
 
         # Filter function to ignore rejected/cancelled activities
         def filter_fn(activity):
+            act_type = (activity.get('type', '') or '').upper()
             status = (activity.get('status', '') or '').lower()
-            return status == '' or ('rejected' not in status and 'cancelled' not in status)
+            return act_type != 'LEGACY_TRANSFER' and (not ignore_rejected or status == '' or ('rejected' not in status and 'cancelled' not in status))
 
         activities = self.do_graphql_query(
             'FetchActivityFeedItems',
@@ -360,7 +361,7 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
             },
             'activityFeedItems.edges',
             'array',
-            filter_fn = filter_fn if ignore_rejected else None,
+            filter_fn = filter_fn,
         )
 
         for act in activities:
