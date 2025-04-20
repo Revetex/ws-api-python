@@ -31,6 +31,12 @@ class WealthsimpleAPIBase:
         self.session = WSAPISession()
         self.start_session(sess)
 
+    user_agent = None
+
+    @staticmethod
+    def set_user_agent(user_agent: str):
+        WealthsimpleAPI.user_agent = user_agent
+
     @staticmethod
     def uuidv4() -> str:
         return str(uuid.uuid4())
@@ -50,6 +56,9 @@ class WealthsimpleAPIBase:
 
         if self.session.wssdi:
             headers['x-ws-device-id'] = self.session.wssdi
+
+        if WealthsimpleAPI.user_agent:
+            headers['User-Agent'] = WealthsimpleAPI.user_agent
 
         try:
             response = requests.request(method, url, json=data, headers=headers)

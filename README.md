@@ -30,6 +30,9 @@ class WSApiTest:
         persist_session_fct = lambda sess: keyring.set_password(keyring_service_name, "session", sess)
         # The session contains tokens that can be used to empty your Wealthsimple account, so treat it with respect!
         # i.e. don't store it in a Git repository, or anywhere it can be accessed by others!
+
+        # If you want, you can set a custom User-Agent for the requests to the WealthSimple API:
+        WealthsimpleAPI.set_user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36")
     
         # 2. If it's the first time you run this, create a new session using the username & password (and TOTP answer, if needed). Do NOT save those infos in your code!
         session = keyring.get_password(keyring_service_name, "session")
