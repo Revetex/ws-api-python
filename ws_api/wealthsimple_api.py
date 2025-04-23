@@ -459,6 +459,38 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
         elif act['type'] == 'NON_RESIDENT_TAX':
             act['description'] = "Non-resident tax"
 
+        # Refs:
+        #   https://www.payments.ca/payment-resources/iso-20022/automatic-funds-transfer
+        #   https://www.payments.ca/compelling-new-evidence-strong-link-between-aft-and-canadas-cheque-decline
+        # 2nd ref states: "AFTs are electronic direct credit or direct debit transactions, commonly known in Canada as direct deposits or pre-authorized debits (PADs)."
+        elif act['type'] in ('DEPOSIT', 'WITHDRAWAL') and act['subType'] == 'AFT':
+            type_ = 'Direct deposit' if act['type'] == 'DEPOSIT' else 'Pre-authorized debit'
+            direction = 'from' if type_ == 'Direct deposit' else 'to'
+            institution = act['aftOriginatorName'] if act['aftOriginatorName'] else act['externalCanonicalId']
+            act['description'] = f"{type_}: {direction} {institution}"
+
+        elif act['type'] == 'WITHDRAWAL' and act['subType'] == 'BILL_PAY':
+            type_ = act['type'].capitalize()
+            name = act['billPayPayeeNickname']
+            if not name:
+                name = act['billPayCompanyName']
+            number = act['redactedExternalAccountNumber']
+            act['description'] = f"{type_}: Bill pay {name} {number}"
+
+        elif act['type'] == 'P2P_PAYMENT' and act['subType'] in ('SEND', 'SEND_RECEIVED'):
+            direction = 'sent to' if act['subType'] == 'SEND' else 'received from'
+            p2pHandle = act['p2pHandle']
+            act['description'] = f"Cash {direction} {p2pHandle}"
+
+        elif act['type'] == 'PROMOTION' and act['subType'] == 'INCENTIVE_BONUS':
+            type_ = act['type'].capitalize()
+            subtype = act['subType'].replace('_', ' ').capitalize()
+            act['description'] = f"{type_}: {subtype}"
+
+        elif act['type'] == 'REFERRAL' and act['subType'] is None:
+            type_ = act['type'].capitalize()
+            act['description'] = f"{type_}"
+
         # TODO: Add other types as needed
 
     def security_id_to_symbol(self, security_id: str) -> str:
