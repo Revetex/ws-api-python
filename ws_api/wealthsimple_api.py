@@ -312,6 +312,8 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
             account['description'] = f"RRSP: self-directed - {account['currency']}"
         elif account['unifiedAccountType'] == 'MANAGED_RRSP':
             account['description'] = f"RRSP: managed - {account['currency']}"
+        elif account['unifiedAccountType'] == 'SELF_DIRECTED_SPOUSAL_RRSP':
+            account['description'] = f"RRSP: self-directed spousal - {account['currency']}"
         elif account['unifiedAccountType'] == 'SELF_DIRECTED_TFSA':
             account['description'] = f"TFSA: self-directed - {account['currency']}"
         elif account['unifiedAccountType'] == 'MANAGED_TFSA':
@@ -324,6 +326,8 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
             account['description'] = "Non-registered: managed - joint"
         elif account['unifiedAccountType'] == 'SELF_DIRECTED_CRYPTO':
             account['description'] = "Crypto"
+        elif account['unifiedAccountType'] == 'SELF_DIRECTED_RRIF':
+             account['description'] = f"RRIF: self-directed - {account['currency']}"
         # TODO: Add other types as needed
 
     def get_account_balances(self, account_id):
