@@ -27,7 +27,7 @@ class WSApiTest:
     def main(self):
         # 1. Define a function that will be called when the session is created or updated. Persist the session to a safe place, like in the keyring
         keyring_service_name = "foo.bar"
-        persist_session_fct = lambda sess: keyring.set_password(keyring_service_name, "session", sess)
+        persist_session_fct = lambda sess, uname: keyring.set_password(f"{keyring_service_name}.{uname}", "session", sess)
         # The session contains tokens that can be used to empty your Wealthsimple account, so treat it with respect!
         # i.e. don't store it in a Git repository, or anywhere it can be accessed by others!
 
@@ -35,7 +35,8 @@ class WSApiTest:
         WealthsimpleAPI.set_user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36")
     
         # 2. If it's the first time you run this, create a new session using the username & password (and TOTP answer, if needed). Do NOT save those infos in your code!
-        session = keyring.get_password(keyring_service_name, "session")
+        username = input("Wealthsimple username (email): ")
+        session = keyring.get_password(f"{keyring_service_name}.{username}", "session")
         if session:
             session = WSAPISession.from_json(session)
         if not session:
@@ -46,6 +47,10 @@ class WSApiTest:
                 try:
                     if not username:
                         username = input("Wealthsimple username (email): ")
+                        session = keyring.get_password(f"{keyring_service_name}.{username}", "session")
+                        if session:
+                            session = WSAPISession.from_json(session)
+                            break
                     if not password:
                         password = input("Password: ")
                     WealthsimpleAPI.login(username, password, otp_answer, persist_session_fct=persist_session_fct)
@@ -61,7 +66,7 @@ class WSApiTest:
                     password = None
     
         # 3. Use the session object to instantiate the API object
-        ws = WealthsimpleAPI.from_token(session, persist_session_fct)
+        ws = WealthsimpleAPI.from_token(session, persist_session_fct, username)
         # persist_session_fct is needed here too, because the session may be updated if the access token expired, and thus this function will be called to save the new session
         
         # Optionally define functions to cache market data, if you want transactions' descriptions and accounts balances to show the security's symbol instead of its ID
@@ -80,6 +85,15 @@ class WSApiTest:
         
         # 4. Use the API object to access your WS accounts
         accounts = ws.get_accounts()
+
+        print("All Accounts Historical Value & Gains:")
+        historical_fins = ws.get_identity_historical_financials([a['id'] for a in accounts])
+        for hf in historical_fins:
+            value = float(hf['netLiquidationValueV2']['amount'])
+            deposits = float(hf['netDepositsV2']['amount'])
+            gains = value - deposits
+            print(f"  - {hf['date']} = ${value:,.0f} - {deposits:,.0f} (deposits) = {gains:,.0f} (gains)")
+        
         for account in accounts:
             print(f"Account: {account['description']} ({account['number']})")
             if account['description'] == account['unifiedAccountType']:

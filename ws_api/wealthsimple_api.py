@@ -7,6 +7,7 @@ from typing import Optional, Callable, Any
 
 from ws_api.exceptions import CurlException, LoginFailedException, ManualLoginRequired, OTPRequiredException, UnexpectedException, WSApiException
 from ws_api.session import WSAPISession
+from inspect import signature
 
 
 class WealthsimpleAPIBase:
@@ -24,6 +25,7 @@ class WealthsimpleAPIBase:
         'FetchFundsTransfer': "query FetchFundsTransfer($id: ID!) {\n  fundsTransfer: funds_transfer(id: $id, include_cancelled: true) {\n    ...FundsTransfer\n    __typename\n  }\n}\n\nfragment FundsTransfer on FundsTransfer {\n  id\n  status\n  cancellable\n  rejectReason: reject_reason\n  schedule {\n    id\n    __typename\n  }\n  source {\n    ...BankAccountOwner\n    __typename\n  }\n  destination {\n    ...BankAccountOwner\n    __typename\n  }\n  __typename\n}\n\nfragment BankAccountOwner on BankAccountOwner {\n  bankAccount: bank_account {\n    ...BankAccount\n    __typename\n  }\n  __typename\n}\n\nfragment BankAccount on BankAccount {\n  id\n  accountName: account_name\n  corporate\n  createdAt: created_at\n  currency\n  institutionName: institution_name\n  jurisdiction\n  nickname\n  type\n  updatedAt: updated_at\n  verificationDocuments: verification_documents {\n    ...BankVerificationDocument\n    __typename\n  }\n  verifications {\n    ...BankAccountVerification\n    __typename\n  }\n  ...CaBankAccount\n  ...UsBankAccount\n  __typename\n}\n\nfragment CaBankAccount on CaBankAccount {\n  accountName: account_name\n  accountNumber: account_number\n  __typename\n}\n\nfragment UsBankAccount on UsBankAccount {\n  accountName: account_name\n  accountNumber: account_number\n  __typename\n}\n\nfragment BankVerificationDocument on VerificationDocument {\n  id\n  acceptable\n  updatedAt: updated_at\n  createdAt: created_at\n  documentId: document_id\n  documentType: document_type\n  rejectReason: reject_reason\n  reviewedAt: reviewed_at\n  reviewedBy: reviewed_by\n  __typename\n}\n\nfragment BankAccountVerification on BankAccountVerification {\n  custodianProcessedAt: custodian_processed_at\n  custodianStatus: custodian_status\n  document {\n    ...BankVerificationDocument\n    __typename\n  }\n  __typename\n}",
         'FetchInstitutionalTransfer': "query FetchInstitutionalTransfer($id: ID!) {\n  accountTransfer(id: $id) {\n    ...InstitutionalTransfer\n    __typename\n  }\n}\n\nfragment InstitutionalTransfer on InstitutionalTransfer {\n  id\n  accountId: account_id\n  state\n  documentId: document_id\n  documentType: document_type\n  expectedCompletionDate: expected_completion_date\n  timelineExpectation: timeline_expectation {\n    lowerBound: lower_bound\n    upperBound: upper_bound\n    __typename\n  }\n  estimatedCompletionMaximum: estimated_completion_maximum\n  estimatedCompletionMinimum: estimated_completion_minimum\n  institutionName: institution_name\n  transferStatus: external_state\n  redactedInstitutionAccountNumber: redacted_institution_account_number\n  expectedValue: expected_value\n  transferType: transfer_type\n  cancellable\n  pdfUrl: pdf_url\n  clientVisibleState: client_visible_state\n  shortStatusDescription: short_status_description\n  longStatusDescription: long_status_description\n  progressPercentage: progress_percentage\n  type\n  rolloverType: rollover_type\n  autoSignatureEligible: auto_signature_eligible\n  parentInstitution: parent_institution {\n    id\n    name\n    __typename\n  }\n  stateHistories: state_histories {\n    id\n    state\n    notes\n    transitionSubmittedBy: transition_submitted_by\n    transitionedAt: transitioned_at\n    transitionCode: transition_code\n    __typename\n  }\n  transferFeeReimbursement: transfer_fee_reimbursement {\n    id\n    feeAmount: fee_amount\n    __typename\n  }\n  docusignSentViaEmail: docusign_sent_via_email\n  clientAccountType: client_account_type\n  primaryClientIdentityId: primary_client_identity_id\n  primaryOwnerSigned: primary_owner_signed\n  secondaryOwnerSigned: secondary_owner_signed\n  __typename\n}",
         'FetchAccountHistoricalFinancials': "query FetchAccountHistoricalFinancials($id: ID!, $currency: Currency!, $startDate: Date, $resolution: DateResolution!, $endDate: Date, $first: Int, $cursor: String) {\n          account(id: $id) {\n            id\n            financials {\n              historicalDaily(\n                currency: $currency\n                startDate: $startDate\n                resolution: $resolution\n                endDate: $endDate\n                first: $first\n                after: $cursor\n              ) {\n                edges {\n                  node {\n                    ...AccountHistoricalFinancials\n                    __typename\n                  }\n                  __typename\n                }\n                pageInfo {\n                  hasNextPage\n                  endCursor\n                  __typename\n                }\n                __typename\n              }\n              __typename\n            }\n            __typename\n          }\n        }\n\n        fragment AccountHistoricalFinancials on AccountHistoricalDailyFinancials {\n          date\n          netLiquidationValueV2 {\n            ...Money\n            __typename\n          }\n          netDepositsV2 {\n            ...Money\n            __typename\n          }\n          __typename\n        }\n\n        fragment Money on Money {\n          amount\n          cents\n          currency\n          __typename\n        }",
+        'FetchIdentityHistoricalFinancials': "query FetchIdentityHistoricalFinancials($identityId: ID!, $currency: Currency!, $startDate: Date, $endDate: Date, $first: Int, $cursor: String, $accountIds: [ID!]) {\n      identity(id: $identityId) {\n        id\n        financials(filter: {accounts: $accountIds}) {\n          historicalDaily(\n            currency: $currency\n            startDate: $startDate\n            endDate: $endDate\n            first: $first\n            after: $cursor\n          ) {\n            edges {\n              node {\n                ...IdentityHistoricalFinancials\n                __typename\n              }\n              __typename\n            }\n            pageInfo {\n              hasNextPage\n              endCursor\n              __typename\n            }\n            __typename\n          }\n          __typename\n        }\n        __typename\n      }\n    }\n\n    fragment IdentityHistoricalFinancials on IdentityHistoricalDailyFinancials {\n      date\n      netLiquidationValueV2 {\n        amount\n        currency\n        __typename\n      }\n      netDepositsV2 {\n        amount\n        currency\n        __typename\n      }\n      __typename\n    }",
     }
 
     def __init__(self, sess: Optional[WSAPISession] = None):
@@ -127,7 +129,7 @@ class WealthsimpleAPIBase:
         if not self.session.session_id:
             self.session.session_id = str(uuid.uuid4())
 
-    def check_oauth_token(self, persist_session_fct: Optional[Callable[[WSAPISession], None]] = None):
+    def check_oauth_token(self, persist_session_fct: Optional[Callable[[WSAPISession, Optional[str]], None]] = None, username = None):
         if self.session.access_token:
             try:
                 # noinspection PyUnresolvedReferences
@@ -152,7 +154,10 @@ class WealthsimpleAPIBase:
             self.session.access_token = response['access_token']
             self.session.refresh_token = response['refresh_token']
             if persist_session_fct:
-                persist_session_fct(self.session.to_json())
+                if len(signature(persist_session_fct).parameters) == 3:
+                    persist_session_fct(self.session.to_json(), username)
+                else:
+                    persist_session_fct(self.session.to_json())
             return
 
         raise ManualLoginRequired("OAuth token invalid and cannot be refreshed.")
@@ -199,12 +204,15 @@ class WealthsimpleAPIBase:
 
         # Persist the session if a persist function is provided
         if persist_session_fct:
-            persist_session_fct(self.session.to_json())
+            if len(signature(persist_session_fct).parameters) == 3:
+                persist_session_fct(self.session.to_json(), username)
+            else:
+                persist_session_fct(self.session.to_json())
 
         return self.session
 
     def do_graphql_query(self, query_name: str, variables: dict, data_response_path: str, expect_type: str,
-                         filter_fn: callable = None):
+                         filter_fn: callable = None, load_all_pages: bool = False):
         query = {
             'operationName': query_name,
             'query': self.GRAPHQL_QUERIES[query_name],
@@ -229,11 +237,15 @@ class WealthsimpleAPIBase:
 
         data = response_data['data']
 
+        end_cursor = None
+
         # Access the nested data using the data_response_path
         for key in data_response_path.split('.'):
             if key not in data:
                 raise WSApiException(f"GraphQL query failed: {query_name}", response_data)
             data = data[key]
+            if hasattr(data, 'pageInfo') and hasattr(data.pageInfo, 'hasNextPage') and data.pageInfo.hasNextPage:
+                end_cursor = data.pageInfo.endCursor
 
         # Ensure the data type matches the expected one (either array or object)
         if (expect_type == 'array' and not isinstance(data, list)) or (
@@ -246,6 +258,14 @@ class WealthsimpleAPIBase:
 
         if filter_fn:
             data = list(filter(filter_fn, data))
+
+        if load_all_pages:
+            if expect_type != 'array':
+                raise UnexpectedException("Can't load all pages for GraphQL queries that do not return arrays")
+            if end_cursor:
+                variables['cursor'] = end_cursor
+                more_data = self.do_graphql_query(query_name, variables, data_response_path, expect_type, filter, True)
+                data += more_data
 
         return data
 
@@ -264,9 +284,9 @@ class WealthsimpleAPIBase:
         return ws.login_internal(username, password, otp_answer, persist_session_fct, scope)
 
     @staticmethod
-    def from_token(sess: WSAPISession, persist_session_fct: callable = None):
+    def from_token(sess: WSAPISession, persist_session_fct: callable = None, username: Optional[str] = None):
         ws = WealthsimpleAPI(sess)
-        ws.check_oauth_token(persist_session_fct)
+        ws.check_oauth_token(persist_session_fct, username)
         return ws
 
 class WealthsimpleAPI(WealthsimpleAPIBase):
@@ -288,6 +308,7 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
                 'identity.accounts.edges',
                 'array',
                 filter_fn=filter_fn,
+                load_all_pages=True,
             )
             for account in accounts:
                 self._account_add_description(account)
@@ -366,6 +387,22 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
                 'cursor': cursor
             },
             'account.financials.historicalDaily.edges',
+            'array',
+        )
+
+    def get_identity_historical_financials(self, account_ids = None, currency: str = 'CAD', start_date = None, end_date = None, first = None, cursor = None):
+        return self.do_graphql_query(
+            'FetchIdentityHistoricalFinancials',
+            {
+                'identityId': self.get_token_info().get('identity_canonical_id'),
+                'currency': currency,
+                'startDate': start_date.strftime('%Y-%m-%dT%H:%M:%S.%fZ') if start_date else None,
+                'endDate': end_date.strftime('%Y-%m-%dT%H:%M:%S.%fZ') if end_date else None,
+                'first': first,
+                'cursor': cursor,
+                'accountIds': account_ids or [],
+            },
+            'identity.financials.historicalDaily.edges',
             'array',
         )
 
