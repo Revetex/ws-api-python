@@ -99,12 +99,20 @@ class WSApiTest:
             print(f"  Available (cash) balance: {cash_balance} {account['currency']}")
     
             if len(balances) > 1:
-                print("  Other positions:")
+                print("  Assets:")
                 for security, bal in balances.items():
                     if security in ['sec-c-cad', 'sec-c-usd']:
                         continue
                     print(f"  - {security} x {bal}")
     
+            print("  Historical Value & Gains:")
+            historical_fins = ws.get_account_historical_financials(account['id'], account['currency'])            
+            for hf in historical_fins:
+                value = hf['netLiquidationValueV2']['cents'] / 100
+                deposits = hf['netDepositsV2']['cents'] / 100
+                gains = value - deposits
+                print(f"  - {hf['date']} = ${value:,.0f} - {deposits:,.0f} (deposits) = {gains:,.0f} (gains)")
+            
             # Fetch activities (transactions)
             acts = ws.get_activities(account['id'])
             if acts:
