@@ -406,9 +406,9 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
             'array',
         )
 
-    def get_activities(self, account_id, how_many=50, order_by='OCCURRED_AT_DESC', ignore_rejected=True):
+    def get_activities(self, account_id, how_many=50, order_by='OCCURRED_AT_DESC', ignore_rejected=True, start_date = None, end_date = None):
         # Calculate the end date for the condition
-        end_date = (datetime.now() + timedelta(hours=23, minutes=59, seconds=59, milliseconds=999))
+        end_date = (end_date if end_date else datetime.now() + timedelta(hours=23, minutes=59, seconds=59, milliseconds=999))
 
         # Filter function to ignore rejected/cancelled activities
         def filter_fn(activity):
@@ -422,6 +422,7 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
                 'orderBy': order_by,
                 'first': how_many,
                 'condition': {
+                    'startDate': start_date.strftime('%Y-%m-%dT%H:%M:%S.%fZ') if start_date else None,
                     'endDate': end_date.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
                     'accountIds': [account_id],
                 },
