@@ -457,10 +457,15 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
             verb = act['subType'].replace('_', ' ').capitalize()
             action = 'buy' if act['type'] == 'DIY_BUY' else 'sell'
             security = self.security_id_to_symbol(act['securityId'])
-            act['description'] = (
-                f"{verb}: {action} {float(act['assetQuantity'])} x "
-                f"{security} @ {float(act['amount']) / float(act['assetQuantity'])}"
-            )
+            if act['assetQuantity'] is None:
+                act['description'] = (
+                    f"{verb}: {action} TBD"
+                )
+            else:
+                act['description'] = (
+                    f"{verb}: {action} {float(act['assetQuantity'])} x "
+                    f"{security} @ {float(act['amount']) / float(act['assetQuantity'])}"
+                )
 
         elif act['type'] in ['DEPOSIT', 'WITHDRAWAL'] and act['subType'] in ['E_TRANSFER', 'E_TRANSFER_FUNDING']:
             direction = 'from' if act['type'] == 'DEPOSIT' else 'to'
