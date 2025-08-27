@@ -5,7 +5,7 @@ import requests
 import uuid
 from typing import Optional, Callable, Any
 
-from ws_api.exceptions import CurlException, LoginFailedException, ManualLoginRequired, OTPRequiredException, UnexpectedException, WSApiException
+from ws_api.exceptions import CurlException, LoginFailedException, ManualLoginRequired, OTPRequiredException, UnexpectedException, WSApiException  # noqa: E501
 from ws_api.session import WSAPISession
 from inspect import signature
 
@@ -38,7 +38,7 @@ class WealthsimpleAPIBase:
 
     @staticmethod
     def set_user_agent(user_agent: str):
-        WealthsimpleAPI.user_agent = user_agent
+        WealthsimpleAPIBase.user_agent = user_agent
 
     @staticmethod
     def uuidv4() -> str:
@@ -60,8 +60,8 @@ class WealthsimpleAPIBase:
         if self.session.wssdi:
             headers['x-ws-device-id'] = self.session.wssdi
 
-        if WealthsimpleAPI.user_agent:
-            headers['User-Agent'] = WealthsimpleAPI.user_agent
+        if WealthsimpleAPIBase.user_agent:
+            headers['User-Agent'] = WealthsimpleAPIBase.user_agent
 
         try:
             response = requests.request(method, url, json=data, headers=headers)
@@ -129,7 +129,7 @@ class WealthsimpleAPIBase:
         if not self.session.session_id:
             self.session.session_id = str(uuid.uuid4())
 
-    def check_oauth_token(self, persist_session_fct: Optional[Callable[[WSAPISession, Optional[str]], None]] = None, username = None):
+    def check_oauth_token(self, persist_session_fct: Optional[Callable[[WSAPISession, Optional[str]], None]] = None, username=None):
         if self.session.access_token:
             try:
                 # noinspection PyUnresolvedReferences
@@ -241,7 +241,7 @@ class WealthsimpleAPIBase:
 
         # Access the nested data using the data_response_path
         for key in data_response_path.split('.'):
-            if key not in data:
+            if not data or key not in data:
                 raise WSApiException(f"GraphQL query failed: {query_name}", response_data)
             data = data[key]
             if hasattr(data, 'pageInfo') and hasattr(data.pageInfo, 'hasNextPage') and data.pageInfo.hasNextPage:
@@ -284,26 +284,85 @@ class WealthsimpleAPIBase:
         return ws.login_internal(username, password, otp_answer, persist_session_fct, scope)
 
     @staticmethod
-    def from_token(sess: WSAPISession, persist_session_fct: callable = None, username: Optional[str] = None):
+    def from_token(
+        sess: WSAPISession,
+        persist_session_fct: callable = None,
+        username: Optional[str] = None,
+    ):
         ws = WealthsimpleAPI(sess)
         ws.check_oauth_token(persist_session_fct, username)
         return ws
 
+
 class WealthsimpleAPI(WealthsimpleAPIBase):
     def __init__(self, sess: WSAPISession = None):
         super().__init__(sess)
+        # Caches
         self.account_cache = {}
+        self._md_cache = {}  # security_id -> (timestamp, data)
+        self._fx_cache = {}  # (base, quote) -> (timestamp, rate)
+        self._cache_ttl_sec = 120
+        self._symbol_map = {}  # security_id -> (symbol, name)
+
+    # -------------- Market data (with simple in-memory cache) --------------
+    def get_security_market_data(
+        self,
+        security_id: str,
+        force_refresh: bool = False,
+    ):
+        now = datetime.utcnow().timestamp()
+        if not force_refresh:
+            cached = self._md_cache.get(security_id)
+            if cached and (now - cached[0]) < self._cache_ttl_sec:
+                return cached[1]
+        data = self.do_graphql_query(
+            'FetchSecurityMarketData',
+            {'id': security_id},
+            'security',
+            'object',
+        )
+        if data:
+            self._md_cache[security_id] = (now, data)
+        return data
+
+    def get_fx_rate(self, base: str, quote: str = 'CAD') -> Optional[float]:
+        if base == quote:
+            return 1.0
+        key = (base, quote)
+        now = datetime.utcnow().timestamp()
+        cached = self._fx_cache.get(key)
+        if cached and (now - cached[0]) < self._cache_ttl_sec:
+            return cached[1]
+    # Attempt to derive via market data (placeholder logic)
+        # Wealthsimple may not expose direct FX; we default to None here.
+        rate = None
+        # Store placeholder (avoid repeated attempts)
+        self._fx_cache[key] = (now, rate if rate is not None else 0.0)
+        return rate
+
+    def convert_money(
+        self, amount: float, from_cur: str, to_cur: str = 'CAD'
+    ) -> Optional[float]:
+        rate = self.get_fx_rate(from_cur, to_cur)
+        if rate is None:
+            return None
+        return amount * rate
 
     def get_accounts(self, open_only=True, use_cache=True):
         cache_key = 'open' if open_only else 'all'
         if not use_cache or cache_key not in self.account_cache:
-            filter_fn = (lambda acc: acc.get('status') == 'open') if open_only else None
+            filter_fn = (
+                (lambda acc: acc.get('status') == 'open')
+                if open_only else None
+            )
 
             accounts = self.do_graphql_query(
                 'FetchAllAccountFinancials',
                 {
                     'pageSize': 25,
-                    'identityId': self.get_token_info().get('identity_canonical_id'),
+                    'identityId': self.get_token_info().get(
+                        'identity_canonical_id'
+                    ),
                 },
                 'identity.accounts.edges',
                 'array',
@@ -329,27 +388,49 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
         if account.get('nickname'):
             account['description'] = account['nickname']
         elif account['unifiedAccountType'] == 'CASH':
-            account['description'] = "Cash: joint" if account['accountOwnerConfiguration'] == 'MULTI_OWNER' else "Cash"
+            account['description'] = (
+                "Cash: joint"
+                if account['accountOwnerConfiguration'] == 'MULTI_OWNER'
+                else "Cash"
+            )
         elif account['unifiedAccountType'] == 'SELF_DIRECTED_RRSP':
-            account['description'] = f"RRSP: self-directed - {account['currency']}"
+            account['description'] = (
+                f"RRSP: self-directed - {account['currency']}"
+            )
         elif account['unifiedAccountType'] == 'MANAGED_RRSP':
             account['description'] = f"RRSP: managed - {account['currency']}"
         elif account['unifiedAccountType'] == 'SELF_DIRECTED_SPOUSAL_RRSP':
-            account['description'] = f"RRSP: self-directed spousal - {account['currency']}"
+            account['description'] = (
+                f"RRSP: self-directed spousal - {account['currency']}"
+            )
         elif account['unifiedAccountType'] == 'SELF_DIRECTED_TFSA':
-            account['description'] = f"TFSA: self-directed - {account['currency']}"
+            account['description'] = (
+                f"TFSA: self-directed - {account['currency']}"
+            )
         elif account['unifiedAccountType'] == 'MANAGED_TFSA':
             account['description'] = f"TFSA: managed - {account['currency']}"
-        elif account['unifiedAccountType'] == 'SELF_DIRECTED_JOINT_NON_REGISTERED':
-            account['description'] = "Non-registered: self-directed - joint"
-        elif account['unifiedAccountType'] == 'SELF_DIRECTED_NON_REGISTERED_MARGIN':
-            account['description'] = "Non-registered: self-directed margin"
+        elif (
+            account['unifiedAccountType']
+            == 'SELF_DIRECTED_JOINT_NON_REGISTERED'
+        ):
+            account['description'] = (
+                "Non-registered: self-directed - joint"
+            )
+        elif (
+            account['unifiedAccountType']
+            == 'SELF_DIRECTED_NON_REGISTERED_MARGIN'
+        ):
+            account['description'] = (
+                "Non-registered: self-directed margin"
+            )
         elif account['unifiedAccountType'] == 'MANAGED_JOINT':
             account['description'] = "Non-registered: managed - joint"
         elif account['unifiedAccountType'] == 'SELF_DIRECTED_CRYPTO':
             account['description'] = "Crypto"
         elif account['unifiedAccountType'] == 'SELF_DIRECTED_RRIF':
-             account['description'] = f"RRIF: self-directed - {account['currency']}"
+            account['description'] = (
+                f"RRIF: self-directed - {account['currency']}"
+            )
         # TODO: Add other types as needed
 
     def get_account_balances(self, account_id):
@@ -362,26 +443,203 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
             'accounts',
             'array',
         )
-
-        # Extracting balances and returning them in a dictionary
         balances = {}
-        for account in accounts[0]['custodianAccounts']:
-            for balance in account['financials']['balance']:
+        if not accounts:
+            return balances
+        for custodian in accounts[0].get('custodianAccounts', []):
+            for balance in custodian.get('financials', {}).get('balance', []):
                 security = balance['securityId']
-                if security != 'sec-c-cad' and security != 'sec-c-usd':
+                if security not in ('sec-c-cad', 'sec-c-usd'):
                     security = self.security_id_to_symbol(security)
                 balances[security] = balance['quantity']
-
         return balances
 
-    def get_account_historical_financials(self, account_id: str, currency: str = 'CAD', start_date = None, end_date = None, resolution = 'WEEKLY', first = None, cursor = None):
+    def get_account_positions(self, account_id, include_prices: bool = True):
+        """Return richer position objects for an account.
+
+        Each position dict contains:
+          securityId, symbol, name, exchange, quantity,
+          lastPrice (optional), value (qty*lastPrice),
+          avgPrice (if calculable), pnlAbs (unrealized abs),
+          pnlPct (unrealized % vs avg).
+        Currency pseudo-securities (cash) are included with symbol CAD / USD.
+        """
+        accounts = self.do_graphql_query(
+            'FetchAccountsWithBalance',
+            {
+                'type': 'TRADING',
+                'ids': [account_id],
+            },
+            'accounts',
+            'array',
+        )
+        positions = []
+        if not accounts:
+            return positions
+        # Shape: accounts[0]['custodianAccounts'][..]['financials']['balance']
+        for custodian in accounts[0].get('custodianAccounts', []):
+            for balance in custodian.get('financials', {}).get('balance', []):
+                security_id = balance['securityId']
+                qty_raw = balance.get('quantity', 0)
+                try:
+                    qty = float(qty_raw)
+                except Exception:  # noqa
+                    qty = 0.0
+                avg_price = None
+                # Handle cash pseudo securities
+                if security_id in ('sec-c-cad', 'sec-c-usd'):
+                    currency = 'CAD' if security_id.endswith('cad') else 'USD'
+                    positions.append({
+                        'securityId': security_id,
+                        'symbol': currency,
+                        'name': f"Cash {currency}",
+                        'exchange': '',
+                        'quantity': qty,
+                        'lastPrice': 1.0,
+                        'value': qty,  # qty already float
+                        'currency': currency,
+                        'avgPrice': None,
+                        'pnlAbs': 0.0,
+                        'pnlPct': 0.0,
+                    })
+                    continue
+                # Get symbol/exchange via existing helper
+                # Resolve symbol & name; may trigger a market data fetch
+                resolved = self.security_id_to_symbol(security_id)
+                # security_id_to_symbol returns plain symbol; name may be in md
+                symbol = resolved
+                name = symbol
+                exchange = ''
+                last_price = None
+                currency_code = None
+                avg_price = None
+                if include_prices:
+                    try:
+                        md = self.get_security_market_data(security_id)
+                        if md and md.get('stock'):
+                            stock = md['stock']
+                            name = stock.get('name') or name
+                            exchange = stock.get('primaryExchange') or ''
+                        if (
+                            md and md.get('quote')
+                            and md['quote'].get('last') is not None
+                        ):
+                            last_price = float(md['quote']['last'])
+                            previous_close = md['quote'].get('previousClose')
+                        if md and md.get('fundamentals'):
+                            fund = md['fundamentals']
+                            currency_code = (
+                                fund.get('currency') or currency_code
+                            )
+                            avg_price = (
+                                fund.get('averagePrice')
+                                or fund.get('avgPrice')
+                                or avg_price
+                            )
+                        if md and md.get('quote'):
+                            currency_code = (
+                                md['quote'].get('currency') or currency_code
+                            )
+                    except Exception:  # noqa
+                        pass
+                value = (qty * last_price) if last_price is not None else None
+                pnl_abs = None
+                pnl_pct = None
+                if value is not None and avg_price:
+                    try:
+                        avg_f = float(avg_price)
+                        pnl_abs = (last_price - avg_f) * float(qty)
+                        if avg_f:
+                            pnl_pct = ((last_price - avg_f) / avg_f) * 100.0
+                    except Exception:  # noqa
+                        pnl_abs = None
+                        pnl_pct = None
+                # Fallback: use daily change (previous close) if no avg cost
+                if (
+                    pnl_pct is None
+                    and last_price is not None
+                    and 'previous_close' in locals()
+                    and previous_close is not None
+                ):
+                    try:
+                        prev_f = float(previous_close)
+                        if prev_f:
+                            pnl_abs = (last_price - prev_f) * float(qty)
+                            pnl_pct = ((last_price - prev_f) / prev_f) * 100.0
+                            avg_price = prev_f  # expose as reference price
+                    except Exception:  # noqa
+                        pass
+                positions.append({
+                    'securityId': security_id,
+                    'symbol': symbol.split(':')[-1],  # drop exchange prefix
+                    'name': name,
+                    'exchange': exchange,
+                    'quantity': qty,
+                    'lastPrice': last_price,
+                    'currency': currency_code,
+                    'value': value,
+                    'avgPrice': avg_price,
+                    'pnlAbs': pnl_abs,
+                    'pnlPct': pnl_pct,
+                    'pnlIsDaily': avg_price is not None and pnl_pct is not None and 'previous_close' in locals() and previous_close == avg_price,
+                })
+        # Ensure all values are numeric floats for sorting
+        for p in positions:
+            if not isinstance(p.get('value'), (int, float)):
+                try:
+                    p['value'] = (
+                        float(p['value'])
+                        if p.get('value') is not None
+                        else 0.0
+                    )
+                except Exception:  # noqa
+                    p['value'] = 0.0
+        # Sort by descending value then symbol
+        positions.sort(
+            key=lambda p: (
+                -(p.get('value') or 0.0),
+                p.get('symbol') or '',
+            )
+        )
+        return positions
+
+    # -------------- Export helpers --------------
+    def export_positions_csv(self, positions, path: str):
+        import csv
+        fields = [
+            'symbol', 'name', 'quantity', 'lastPrice', 'value', 'currency',
+            'avgPrice', 'pnlAbs', 'pnlPct'
+        ]
+        with open(path, 'w', newline='', encoding='utf-8') as f:
+            w = csv.DictWriter(f, fieldnames=fields)
+            w.writeheader()
+            for p in positions:
+                row = {k: p.get(k) for k in fields}
+                w.writerow(row)
+
+    def get_account_historical_financials(
+        self,
+        account_id: str,
+        currency: str = 'CAD',
+        start_date=None,
+        end_date=None,
+        resolution='WEEKLY',
+        first=None,
+        cursor=None,
+    ):
         return self.do_graphql_query(
             'FetchAccountHistoricalFinancials',
             {
                 'id': account_id,
                 'currency': currency,
-                'startDate': start_date.strftime('%Y-%m-%dT%H:%M:%S.%fZ') if start_date else None,
-                'endDate': end_date.strftime('%Y-%m-%dT%H:%M:%S.%fZ') if end_date else None,
+                'startDate': (
+                    start_date.strftime('%Y-%m-%d')
+                    if start_date else None
+                ),
+                'endDate': (
+                    end_date.strftime('%Y-%m-%d')
+                    if end_date else None
+                ),
                 'resolution': resolution,
                 'first': first,
                 'cursor': cursor
@@ -390,14 +648,30 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
             'array',
         )
 
-    def get_identity_historical_financials(self, account_ids = None, currency: str = 'CAD', start_date = None, end_date = None, first = None, cursor = None):
+    def get_identity_historical_financials(
+        self,
+        account_ids=None,
+        currency: str = 'CAD',
+        start_date=None,
+        end_date=None,
+        first=None,
+        cursor=None,
+    ):
         return self.do_graphql_query(
             'FetchIdentityHistoricalFinancials',
             {
-                'identityId': self.get_token_info().get('identity_canonical_id'),
+                'identityId': self.get_token_info().get(
+                    'identity_canonical_id'
+                ),
                 'currency': currency,
-                'startDate': start_date.strftime('%Y-%m-%dT%H:%M:%S.%fZ') if start_date else None,
-                'endDate': end_date.strftime('%Y-%m-%dT%H:%M:%S.%fZ') if end_date else None,
+                'startDate': (
+                    start_date.strftime('%Y-%m-%d')
+                    if start_date else None
+                ),
+                'endDate': (
+                    end_date.strftime('%Y-%m-%d')
+                    if end_date else None
+                ),
                 'first': first,
                 'cursor': cursor,
                 'accountIds': account_ids or [],
@@ -406,15 +680,39 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
             'array',
         )
 
-    def get_activities(self, account_id, how_many=50, order_by='OCCURRED_AT_DESC', ignore_rejected=True, start_date = None, end_date = None):
+    def get_activities(
+        self,
+        account_id,
+        how_many=50,
+        order_by='OCCURRED_AT_DESC',
+        ignore_rejected=True,
+        start_date=None,
+        end_date=None,
+    ):
         # Calculate the end date for the condition
-        end_date = (end_date if end_date else datetime.now() + timedelta(hours=23, minutes=59, seconds=59, milliseconds=999))
+        end_date = (
+            end_date
+            if end_date
+            else datetime.now() + timedelta(
+                hours=23, minutes=59, seconds=59, milliseconds=999
+            )
+        )
 
         # Filter function to ignore rejected/cancelled activities
         def filter_fn(activity):
             act_type = (activity.get('type', '') or '').upper()
             status = (activity.get('status', '') or '').lower()
-            return act_type != 'LEGACY_TRANSFER' and (not ignore_rejected or status == '' or ('rejected' not in status and 'cancelled' not in status))
+            return (
+                act_type != 'LEGACY_TRANSFER'
+                and (
+                    not ignore_rejected
+                    or status == ''
+                    or (
+                        'rejected' not in status
+                        and 'cancelled' not in status
+                    )
+                )
+            )
 
         activities = self.do_graphql_query(
             'FetchActivityFeedItems',
@@ -422,14 +720,17 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
                 'orderBy': order_by,
                 'first': how_many,
                 'condition': {
-                    'startDate': start_date.strftime('%Y-%m-%dT%H:%M:%S.%fZ') if start_date else None,
+                    'startDate': (
+                        start_date.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+                        if start_date else None
+                    ),
                     'endDate': end_date.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
                     'accountIds': [account_id],
                 },
             },
             'activityFeedItems.edges',
             'array',
-            filter_fn = filter_fn,
+            filter_fn=filter_fn,
         )
 
         for act in activities:
@@ -442,7 +743,10 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
 
         if act['type'] == 'INTERNAL_TRANSFER':
             accounts = self.get_accounts(False)
-            matching = [acc for acc in accounts if acc['id'] == act['opposingAccountId']]
+            matching = [
+                acc for acc in accounts
+                if acc['id'] == act['opposingAccountId']
+            ]
             target_account = matching.pop() if matching else None
             account_description = (
                 f"{target_account['description']} ({target_account['number']})"
@@ -450,9 +754,15 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
                 act['opposingAccountId']
             )
             if act['subType'] == 'SOURCE':
-                act['description'] = f"Transfer out: Transfer to Wealthsimple {account_description}"
+                act['description'] = (
+                    "Transfer out: Transfer to Wealthsimple "
+                    f"{account_description}"
+                )
             else:
-                act['description'] = f"Transfer in: Transfer from Wealthsimple {account_description}"
+                act['description'] = (
+                    "Transfer in: Transfer from Wealthsimple "
+                    f"{account_description}"
+                )
 
         elif act['type'] in ['DIY_BUY', 'DIY_SELL']:
             verb = act['subType'].replace('_', ' ').capitalize()
@@ -463,18 +773,28 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
                     f"{verb}: {action} TBD"
                 )
             else:
+                price = (
+                    float(act['amount']) / float(act['assetQuantity'])
+                )
                 act['description'] = (
                     f"{verb}: {action} {float(act['assetQuantity'])} x "
-                    f"{security} @ {float(act['amount']) / float(act['assetQuantity'])}"
+                    f"{security} @ {price}"
                 )
 
-        elif act['type'] in ['DEPOSIT', 'WITHDRAWAL'] and act['subType'] in ['E_TRANSFER', 'E_TRANSFER_FUNDING']:
+        elif (
+            act['type'] in ['DEPOSIT', 'WITHDRAWAL']
+            and act['subType'] in ['E_TRANSFER', 'E_TRANSFER_FUNDING']
+        ):
             direction = 'from' if act['type'] == 'DEPOSIT' else 'to'
             act['description'] = (
-                f"Deposit: Interac e-transfer {direction} {act['eTransferName']} {act['eTransferEmail']}"
+                "Deposit: Interac e-transfer "
+                f"{direction} {act['eTransferName']} {act['eTransferEmail']}"
             )
 
-        elif act['type'] == 'DEPOSIT' and act['subType'] == 'PAYMENT_CARD_TRANSACTION':
+        elif (
+            act['type'] == 'DEPOSIT'
+            and act['subType'] == 'PAYMENT_CARD_TRANSACTION'
+        ):
             type_ = act['type'].lower().capitalize()
             act['description'] = f"{type_}: Debit card funding"
 
@@ -488,18 +808,26 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
             if not nickname:
                 nickname = bank_account['accountName']
             act['description'] = (
-                f"{type_}: EFT {direction} {nickname} {bank_account['accountNumber']}"
+                f"{type_}: EFT {direction} {nickname} "
+                f"{bank_account['accountNumber']}"
             )
 
-        elif act['type'] == 'REFUND' and act['subType'] == 'TRANSFER_FEE_REFUND':
+        elif (
+            act['type'] == 'REFUND'
+            and act['subType'] == 'TRANSFER_FEE_REFUND'
+        ):
             act['description'] = "Reimbursement: account transfer fee"
 
-        elif act['type'] == 'INSTITUTIONAL_TRANSFER_INTENT' and act['subType'] == 'TRANSFER_IN':
+        elif (
+            act['type'] == 'INSTITUTIONAL_TRANSFER_INTENT'
+            and act['subType'] == 'TRANSFER_IN'
+        ):
             details = self.get_transfer_details(act['externalCanonicalId'])
             verb = details['transferType'].replace('_', '-').capitalize()
             act['description'] = (
-                f"Institutional transfer: {verb} {details['clientAccountType'].upper()} "
-                f"account transfer from {details['institutionName']} "
+                "Institutional transfer: "
+                f"{verb} {details['clientAccountType'].upper()} "
+                f"from {details['institutionName']} "
                 f"****{details['redactedInstitutionAccountNumber']}"
             )
 
@@ -514,7 +842,10 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
             act['description'] = f"Dividend: {security}"
 
         elif act['type'] == 'FUNDS_CONVERSION':
-            act['description'] = f"Funds converted: {act['currency']} from {'USD' if act['currency'] == 'CAD' else 'CAD'}"
+            other = 'USD' if act['currency'] == 'CAD' else 'CAD'
+            act['description'] = (
+                f"Funds converted: {act['currency']} from {other}"
+            )
 
         elif act['type'] == 'NON_RESIDENT_TAX':
             act['description'] = "Non-resident tax"
@@ -522,11 +853,22 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
         # Refs:
         #   https://www.payments.ca/payment-resources/iso-20022/automatic-funds-transfer
         #   https://www.payments.ca/compelling-new-evidence-strong-link-between-aft-and-canadas-cheque-decline
-        # 2nd ref states: "AFTs are electronic direct credit or direct debit transactions, commonly known in Canada as direct deposits or pre-authorized debits (PADs)."
-        elif act['type'] in ('DEPOSIT', 'WITHDRAWAL') and act['subType'] == 'AFT':
-            type_ = 'Direct deposit' if act['type'] == 'DEPOSIT' else 'Pre-authorized debit'
+    # 2nd ref: AFTs are direct credit/debit payments (direct deposit or PADs)
+        elif (
+            act['type'] in ('DEPOSIT', 'WITHDRAWAL')
+            and act['subType'] == 'AFT'
+        ):
+            type_ = (
+                'Direct deposit'
+                if act['type'] == 'DEPOSIT'
+                else 'Pre-authorized debit'
+            )
             direction = 'from' if type_ == 'Direct deposit' else 'to'
-            institution = act['aftOriginatorName'] if act['aftOriginatorName'] else act['externalCanonicalId']
+            institution = (
+                act['aftOriginatorName']
+                if act['aftOriginatorName']
+                else act['externalCanonicalId']
+            )
             act['description'] = f"{type_}: {direction} {institution}"
 
         elif act['type'] == 'WITHDRAWAL' and act['subType'] == 'BILL_PAY':
@@ -537,12 +879,20 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
             number = act['redactedExternalAccountNumber']
             act['description'] = f"{type_}: Bill pay {name} {number}"
 
-        elif act['type'] == 'P2P_PAYMENT' and act['subType'] in ('SEND', 'SEND_RECEIVED'):
-            direction = 'sent to' if act['subType'] == 'SEND' else 'received from'
+        elif (
+            act['type'] == 'P2P_PAYMENT'
+            and act['subType'] in ('SEND', 'SEND_RECEIVED')
+        ):
+            direction = (
+                'sent to' if act['subType'] == 'SEND' else 'received from'
+            )
             p2pHandle = act['p2pHandle']
             act['description'] = f"Cash {direction} {p2pHandle}"
 
-        elif act['type'] == 'PROMOTION' and act['subType'] == 'INCENTIVE_BONUS':
+        elif (
+            act['type'] == 'PROMOTION'
+            and act['subType'] == 'INCENTIVE_BONUS'
+        ):
             type_ = act['type'].capitalize()
             subtype = act['subType'].replace('_', ' ').capitalize()
             act['description'] = f"{type_}: {subtype}"
@@ -554,13 +904,26 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
         # TODO: Add other types as needed
 
     def security_id_to_symbol(self, security_id: str) -> str:
-        security_symbol = f"[{security_id}]"
-        if self.security_market_data_cache_getter:
-            market_data = self.get_security_market_data(security_id)
-            if market_data and 'stock' in market_data and market_data['stock']:
-                stock = market_data['stock']
-                security_symbol = f"{stock['primaryExchange']}:{stock['symbol']}"
-        return security_symbol
+        """Return human symbol (e.g. TSX:SHOP => SHOP). Caches lookups.
+
+        Fallback shows raw id in brackets if nothing resolvable.
+        """
+        cached = self._symbol_map.get(security_id)
+        if cached:
+            return cached[0]
+        symbol = f"[{security_id}]"
+        try:
+            md = self.get_security_market_data(security_id)
+            if md and md.get('stock'):
+                stock = md['stock']
+                raw_sym = stock.get('symbol') or symbol
+                symbol = raw_sym
+                # store company name if available
+                name = stock.get('name') or raw_sym
+                self._symbol_map[security_id] = (symbol, name)
+        except Exception:  # noqa
+            pass
+        return symbol
 
     def get_etf_details(self, funding_id):
         return self.do_graphql_query(
@@ -578,30 +941,17 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
             'object',
         )
 
-    def set_security_market_data_cache(self, security_market_data_cache_getter: callable, security_market_data_cache_setter: callable):
-        self.security_market_data_cache_getter = security_market_data_cache_getter
-        self.security_market_data_cache_setter = security_market_data_cache_setter
-
-    def get_security_market_data(self, security_id: str, use_cache: bool = True):
-        if not self.security_market_data_cache_getter or not self.security_market_data_cache_setter:
-            use_cache = False
-
-        if use_cache:
-            cached_value = self.security_market_data_cache_getter(security_id)
-            if cached_value:
-                return cached_value
-
-        value = self.do_graphql_query(
-            'FetchSecurityMarketData',
-            {'id': security_id},
-            'security',
-            'object',
+    def set_security_market_data_cache(
+        self,
+        security_market_data_cache_getter: callable,
+        security_market_data_cache_setter: callable,
+    ):
+        self.security_market_data_cache_getter = (
+            security_market_data_cache_getter
         )
-
-        if use_cache:
-            value = self.security_market_data_cache_setter(security_id, value)
-
-        return value
+        self.security_market_data_cache_setter = (
+            security_market_data_cache_setter
+        )
 
     def search_security(self, query):
         # Fetch security search results using GraphQL query

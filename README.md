@@ -152,3 +152,144 @@ if __name__ == "__main__":
     WSApiTest().main()
 
 ```
+
+Development & Tests
+-------------------
+
+To run the local test suite (requires `pytest`):
+
+```bash
+pip install -U pytest
+pytest -q
+```
+
+The lightweight tests currently cover news sentiment robustness in `symbol_analyzer`. More tests can be added under `tests/` for API behaviors and signal generation.
+
+Persistent cache (SQLite)
+-------------------------
+
+This project includes a lightweight persistent cache to reduce API calls and provide a degraded offline mode. By default it creates `cache.sqlite3` at the project root. You can override the path and TTLs via environment variables:
+
+- `WSAPP_CACHE_DB` or `CACHE_DB_PATH`: full path to the SQLite file
+- `CACHE_TTL_QUOTE_SEC` (default 60): quote freshness window
+- `CACHE_TTL_SERIES_SEC` (default 300): time series freshness window
+- `CACHE_TTL_NEWS_SEC` (default 600): news freshness window
+
+The cache is read-through in `APIManager.get_quote`, `APIManager.get_time_series`, and News API calls. On successful fetches, results are written back to the cache.
+
+GUI app (wsapp_gui)
+--------------------
+
+If you use the optional Tkinter GUI under `wsapp_gui/`, a few UX features and Telegram preferences are available:
+
+- Insights badge: The header shows a compact insights badge. Click it to open a popup with the full text and a copy button.
+- Telegram tab:
+    - Include technical alerts: When enabled, INFO-level `TECH_*` alerts (e.g., SMA crosses) are routed to Telegram.
+    - TECH_* format: Choose how `TECH_*` alerts are formatted in Telegram: `plain` or `emoji-rich`.
+
+## Enhanced AI Advisor (optional)
+
+- What it is: An on-device helper that summarizes portfolio metrics and suggests conservative, safety-aware actions (no live orders).
+- How to enable:
+    - In the app: Preferences > Intelligence Artificielle > "Activer le Conseiller (Enhanced AI)".
+    - Or via environment variable before launching the app:
+        - Windows PowerShell:
+            ```powershell
+            $env:AI_ENHANCED = "1"; python .\gui.py
+            ```
+        - macOS/Linux bash:
+            ```bash
+            AI_ENHANCED=1 python gui.py
+            ```
+- Where to use: Strategy tab > "Conseiller (AI)" section. Click "Analyser maintenant" to generate insights.
+- Notes: Feature-flagged; safe by default. PII is lightly masked in outputs.
+Configuration keys (auto-persisted to `ws_app_config.json` when changed in the UI):
+
+- `integrations.telegram.include_technical` (bool, default: true)
+- `integrations.telegram.tech_format` ("plain" | "emoji-rich", default: "plain")
+
+Note: The notifier reads `tech_format` at send time, so changes take effect immediately; no restart required.
+
+Telegram bot commands (optional)
+--------------------------------
+
+If you set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`, you can enable a simple bot that responds to:
+
+- `/summary` or `/insights` – Portfolio insights
+- `/positions` – Top positions
+- `/signals` – Recent signals + quick SMA snapshot
+- `/quote SYM` – Quick market quote (price and change%)
+- `/signal SYM` – Technical SMA(5/20) signal for a symbol
+
+To start the polling handler in your app code:
+
+```python
+from external_apis import APIManager
+
+api = APIManager()
+api.start_telegram_commands(agent, allowed_chat_id="123456789")
+# Or pass a list with allowed_chat_ids=["123456789","987654321"]
+```
+
+Telegram configuration behavior
+-------------------------------
+
+- By default, `TelegramNotifier()` reads `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` from the environment.
+- If you explicitly pass `None` for `bot_token` and/or `chat_id` when creating `TelegramNotifier`, it will treat those as unconfigured and will not fall back to environment variables. This is useful for tests or when you want to disable Telegram programmatically.
+- Passing actual values (non-None) will override any environment values.
+
+Windows quick start
+-------------------
+
+1) Copy `.env.example` to `.env` and fill credentials (don’t commit secrets).
+
+1) Launch the GUI:
+
+```powershell
+./run_gui.bat
+```
+
+1) Optional: enable Enhanced AI for this session:
+
+```powershell
+./run_gui_enhanced.bat
+```
+
+1) CLI helper (wraps `run_ws.py`):
+
+```powershell
+./run_ws_cli.bat accounts
+```
+
+VS Code tips
+------------
+
+- Tasks: Run GUI, CLI accounts, Lint, and Tests are preconfigured under `.vscode/tasks.json`.
+- Debug: Launch configs for the GUI, CLI, and per-file tests are in `.vscode/launch.json`.
+- Dev tools: If needed, install dev dependencies:
+
+```powershell
+pip install -r requirements-dev.txt
+```
+
+Continuous Integration (CI)
+---------------------------
+
+- GitHub Actions workflow runs pytest on pushes and PRs against main (see `.github/workflows/ci.yml`).
+
+Pre-commit hooks
+----------------
+
+Install and enable hooks locally:
+
+```powershell
+pip install pre-commit
+pre-commit install
+```
+
+Includes: basic whitespace fixes, ruff (lint + format), black, and flake8.
+
+Silent GUI launcher (Windows)
+-----------------------------
+
+Use `run_gui_silent.bat` to start the GUI without an attached console window. It prefers pythonw from `.venv`/`venv`, otherwise falls back to a VBScript shim.

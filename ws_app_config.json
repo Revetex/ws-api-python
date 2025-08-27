@@ -1,0 +1,128 @@
+{
+  "theme": "light",
+  "notifications": {
+    "info": false,
+    "warn": false,
+    "alert": true
+  },
+  "window": {
+    "width": 1200,
+    "height": 800,
+    "x": 52,
+    "y": 52
+  },
+  "auto_login": true,
+  "refresh_interval": 300000,
+  "export": {
+    "default_format": "csv",
+    "include_headers": true
+  },
+  "alerts": {
+    "non-registered-crypto-U7qTOXRGaQ": false,
+    "ca-cash-msb-rghuXply9Q": false
+  },
+  "ui": {
+    "onboarded": true,
+    "last_tab": 0,
+    "auto_refresh": {
+      "enabled": true,
+      "seconds": 60
+    },
+    "last_account_id": "tfsa-8Ub5aLeMjg",
+    "charts": {
+      "period_days": 30,
+      "show_grid": true,
+      "show_sma": false,
+      "sma_window": 7
+    }
+  },
+  "integrations": {
+    "telegram": {
+      "enabled": true,
+      "chat_id": "7826950744",
+      "tech_format": "plain",
+      "include_technical": true
+    }
+  },
+  "strategy_runner": {
+    "enabled": true,
+    "interval_sec": 300,
+    "strategy": "confluence",
+    "fast": 10,
+    "slow": 30,
+    "rsi_low": 30,
+    "rsi_high": 70,
+    "rsi_period": 14,
+    "rsi_buy": 55,
+    "rsi_sell": 45,
+    "min_bandwidth": 0.03,
+    "bb_window": 20
+  },
+  "autotrade": {
+    "ledger": [
+      {
+        "timestamp": 1756275492.044625,
+        "symbol": "SYM004",
+        "kind": "buy",
+        "index": 4
+      },
+      {
+        "timestamp": 1756275492.0446267,
+        "symbol": "SYM006",
+        "kind": "buy",
+        "index": 6
+      },
+      {
+        "timestamp": 1756275492.0446272,
+        "symbol": "SYM007",
+        "kind": "buy",
+        "index": 7
+      },
+      {
+        "timestamp": 1756275492.044628,
+        "symbol": "SYM008",
+        "kind": "buy",
+        "index": 8
+      },
+      {
+        "timestamp": 1756275492.0446281,
+        "symbol": "SYM009",
+        "kind": "buy",
+        "index": 9
+      },
+      {
+        "timestamp": 1756275492.0446296,
+        "symbol": "SYM003",
+        "kind": "buy",
+        "index": 3
+      },
+      {
+        "timestamp": 1756275492.0446305,
+        "symbol": "SYM000",
+        "kind": "buy",
+        "index": 0
+      },
+      {
+        "timestamp": 1756275492.044631,
+        "symbol": "SYM001",
+        "kind": "buy",
+        "index": 1
+      },
+      {
+        "timestamp": 1756275492.0446317,
+        "symbol": "SYM002",
+        "kind": "buy",
+        "index": 2
+      },
+      {
+        "timestamp": 1756275492.0446332,
+        "symbol": "SYM005",
+        "kind": "buy",
+        "index": 5
+      }
+    ]
+  },
+  "ai": {
+    "enhanced": false
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: WS GUI",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/gui.py",
+      "console": "integratedTerminal",
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      }
+    },
+    {
+      "name": "Python: WS CLI (accounts)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/run_ws.py",
+      "args": ["accounts"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Python: Debug Tests (current file)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["-q", "${file}"],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ]
+}

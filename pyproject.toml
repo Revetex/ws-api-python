@@ -1,0 +1,25 @@
+[tool.black]
+line-length = 100
+skip-string-normalization = true
+exclude = [
+  "^\\.venv/",
+  "^venv/",
+  "^build/",
+  "^dist/",
+  "^WS_API\\.egg-info/",
+]
+
+[tool.ruff]
+line-length = 100
+# Match flake8 style ignores
+extend-exclude = [".venv", "venv", "build", "dist", "*.egg-info", "WS_API.egg-info", ".mypy_cache"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "N"]
+ignore = ["E203", "E501", "W291", "W293"]
+
+[tool.ruff.format]
+quote-style = "preserve"
+indent-style = "space"
+line-ending = "auto"
+skip-magic-trailing-comma = false
