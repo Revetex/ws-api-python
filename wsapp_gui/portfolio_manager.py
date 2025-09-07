@@ -1,8 +1,11 @@
 """Module de gestion du portefeuille pour l'application Wealthsimple."""
 
 from __future__ import annotations
+
 import threading
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
+
+from .ui_utils import format_money
 
 if TYPE_CHECKING:
     from .app import WSApp
@@ -72,10 +75,7 @@ class PortfolioManager:
                 positions = self.app.api.get_positions(self.app.current_account_id)
 
                 # Charger les activités
-                activities = self.app.api.get_activities(
-                    self.app.current_account_id,
-                    how_many=100
-                )
+                activities = self.app.api.get_activities(self.app.current_account_id, how_many=100)
 
                 self.app.after(0, lambda: self.update_details(positions, activities))
                 self.app.set_status(f"{len(positions)} position(s), {len(activities)} activité(s)")
@@ -85,14 +85,14 @@ class PortfolioManager:
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def update_details(self, positions: List[dict], activities: List[dict]):
+    def update_details(self, positions: list[dict], activities: list[dict]):
         """Met à jour l'affichage des positions et activités."""
         self.app._positions_cache = positions
         self.app._activities_cache = activities  # Ajout du cache des activités
         self._fill_positions(positions)
         self._fill_activities(activities)
 
-    def _fill_positions(self, positions: List[dict]) -> None:
+    def _fill_positions(self, positions: list[dict]) -> None:
         """Remplit le tableau des positions."""
         if not hasattr(self.app, 'tree_positions'):
             return
@@ -102,21 +102,29 @@ class PortfolioManager:
             self.app.tree_positions.delete(item)
 
         # Ajouter les nouvelles positions
+        if not positions:
+            self.app.tree_positions.insert('', 'end', values=("—", "Aucune position", "", ""))
+            return
         for pos in positions:
             security = pos.get('stock', {})
             symbol = security.get('symbol', 'N/A')
             name = security.get('name', 'N/A')
             quantity = pos.get('quantity', 0)
             market_value = pos.get('market_value', 0)
+            currency = pos.get('currency', self.app.base_currency)
 
-            self.app.tree_positions.insert('', 'end', values=(
-                symbol,
-                name,
-                f"{quantity:.4f}",
-                f"${market_value:.2f}"
-            ))
+            self.app.tree_positions.insert(
+                '',
+                'end',
+                values=(
+                    symbol,
+                    name,
+                    f"{quantity:.4f}",
+                    format_money(market_value, currency, with_symbol=False),
+                ),
+            )
 
-    def _fill_activities(self, activities: List[dict]) -> None:
+    def _fill_activities(self, activities: list[dict]) -> None:
         """Remplit le tableau des activités."""
         if not hasattr(self.app, 'tree_activities'):
             return
@@ -126,15 +134,23 @@ class PortfolioManager:
             self.app.tree_activities.delete(item)
 
         # Ajouter les nouvelles activités
+        if not activities:
+            self.app.tree_activities.insert('', 'end', values=("—", "Aucune activité", "", ""))
+            return
         for act in activities:
             date = act.get('occurred_at', '')[:10]  # Format YYYY-MM-DD
             activity_type = act.get('type', 'N/A')
             description = act.get('description', 'N/A')
             amount = act.get('amount', 0)
+            currency = act.get('currency', self.app.base_currency)
 
-            self.app.tree_activities.insert('', 'end', values=(
-                date,
-                activity_type,
-                description,
-                f"${amount:.2f}"
-            ))
+            self.app.tree_activities.insert(
+                '',
+                'end',
+                values=(
+                    date,
+                    activity_type,
+                    description,
+                    format_money(amount, currency, with_symbol=False),
+                ),
+            )

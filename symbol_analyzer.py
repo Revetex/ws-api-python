@@ -1,15 +1,22 @@
 """Analyseur de symboles avec graphiques et stratégies"""
+
 from __future__ import annotations
+
+import math
+import random
+import statistics
+import threading
 import tkinter as tk
 from tkinter import ttk
-import threading
-import math
-import statistics
-import random
+
 try:
-    from analytics.indicators import sma as _sma_ind, rsi as _rsi_ind, macd as _macd_ind
-    from analytics.strategies import MovingAverageCrossStrategy as _MAC, RSIReversionStrategy as _RSIrev
     from analytics.backtest import run_signals_backtest as _run_bt
+    from analytics.indicators import macd as _macd_ind
+    from analytics.indicators import rsi as _rsi_ind
+    from analytics.indicators import sma as _sma_ind
+    from analytics.strategies import MovingAverageCrossStrategy
+    from analytics.strategies import RSIReversionStrategy as _RSIrev
+
     HAS_ANALYTICS = True
 except Exception:  # pragma: no cover
     HAS_ANALYTICS = False
@@ -17,6 +24,7 @@ except Exception:  # pragma: no cover
 try:
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
     from matplotlib.figure import Figure
+
     HAS_MPL = True
 except ImportError:
     HAS_MPL = False
@@ -24,6 +32,7 @@ except ImportError:
 
 try:
     from external_apis import APIManager
+
     HAS_EXTERNAL_APIS = True
 except ImportError:
     HAS_EXTERNAL_APIS = False
@@ -54,9 +63,15 @@ class SymbolAnalyzer:
         self._load_symbol_data()
         # Optional: append quick indicators/backtest summary to strategies box when available
         if HAS_ANALYTICS and self.api_manager:
+
             def _enrich():
                 try:
-                    ts = self.api_manager.get_time_series(self.current_symbol, interval='1day', outputsize='compact') or {}
+                    ts = (
+                        self.api_manager.get_time_series(
+                            self.current_symbol, interval='1day', outputsize='compact'
+                        )
+                        or {}
+                    )
                     closes = []
                     try:
                         k = next((k for k in ts.keys() if 'Time Series' in k), None)
@@ -64,7 +79,9 @@ class SymbolAnalyzer:
                         if isinstance(series, dict):
                             for _d, row in list(sorted(series.items())):
                                 try:
-                                    closes.append(float(row.get('4. close') or row.get('4. Close') or 0.0))
+                                    closes.append(
+                                        float(row.get('4. close') or row.get('4. Close') or 0.0)
+                                    )
                                 except Exception:
                                     pass
                     except Exception:
@@ -75,17 +92,35 @@ class SymbolAnalyzer:
                         r = _rsi_ind(closes, 14)[-1]
                         m_line, m_sig, _ = _macd_ind(closes)
                         macd_last = (m_line[-1] if m_line else None, m_sig[-1] if m_sig else None)
-                        msgs = [f"MA10={ma10:.2f} MA30={ma30:.2f}" if (ma10 and ma30) else None,
-                                f"RSI(14)={r:.1f}" if r else None,
-                                (f"MACD={macd_last[0]:.3f} signal={macd_last[1]:.3f}" if (macd_last[0] and macd_last[1]) else None)]
+                        msgs = [
+                            f"MA10={ma10:.2f} MA30={ma30:.2f}" if (ma10 and ma30) else None,
+                            f"RSI(14)={r:.1f}" if r else None,
+                            (
+                                f"MACD={macd_last[0]:.3f} signal={macd_last[1]:.3f}"
+                                if (macd_last[0] and macd_last[1])
+                                else None
+                            ),
+                        ]
                         msgs = [m for m in msgs if m]
-                        sigs = _MAC(10, 30).generate(closes) + _RSIrev(14, 30, 70).generate(closes)
+                        sigs = MovingAverageCrossStrategy(10, 30).generate(closes) + _RSIrev(
+                            14, 30, 70
+                        ).generate(closes)
                         res = _run_bt(closes, sigs)
                         if self.txt_strategies:
-                            txt = "\n".join([s for s in msgs]) + f"\nBacktest rapide: {res['total_return']*100:.1f}%"
-                            self.txt_strategies.after(0, lambda t=txt: (self.txt_strategies.insert('end', t + '\n'), self.txt_strategies.see('end')))
+                            txt = (
+                                "\n".join([s for s in msgs])
+                                + f"\nBacktest rapide: {res['total_return']*100:.1f}%"
+                            )
+                            self.txt_strategies.after(
+                                0,
+                                lambda t=txt: (
+                                    self.txt_strategies.insert('end', t + '\n'),
+                                    self.txt_strategies.see('end'),
+                                ),
+                            )
                 except Exception:
                     pass
+
             threading.Thread(target=_enrich, daemon=True).start()
 
     def _create_window(self):
@@ -163,28 +198,74 @@ class SymbolAnalyzer:
         self.var_show_rsi = tk.BooleanVar(value=False)
         self.var_show_macd = tk.BooleanVar(value=False)
 
-        ttk.Checkbutton(controls_frame, text="SMA", variable=self.var_show_sma, command=self._update_chart).pack(side=tk.LEFT, padx=2)
+        ttk.Checkbutton(
+            controls_frame, text="SMA", variable=self.var_show_sma, command=self._update_chart
+        ).pack(side=tk.LEFT, padx=2)
         self.var_sma_period = tk.IntVar(value=20)
-        tk.Spinbox(controls_frame, from_=3, to=300, width=4, textvariable=self.var_sma_period, command=self._update_chart).pack(side=tk.LEFT, padx=(0, 6))
+        tk.Spinbox(
+            controls_frame,
+            from_=3,
+            to=300,
+            width=4,
+            textvariable=self.var_sma_period,
+            command=self._update_chart,
+        ).pack(side=tk.LEFT, padx=(0, 6))
 
-        ttk.Checkbutton(controls_frame, text="EMA", variable=self.var_show_ema, command=self._update_chart).pack(side=tk.LEFT, padx=2)
+        ttk.Checkbutton(
+            controls_frame, text="EMA", variable=self.var_show_ema, command=self._update_chart
+        ).pack(side=tk.LEFT, padx=2)
         self.var_ema_period = tk.IntVar(value=12)
-        tk.Spinbox(controls_frame, from_=3, to=300, width=4, textvariable=self.var_ema_period, command=self._update_chart).pack(side=tk.LEFT, padx=(0, 6))
+        tk.Spinbox(
+            controls_frame,
+            from_=3,
+            to=300,
+            width=4,
+            textvariable=self.var_ema_period,
+            command=self._update_chart,
+        ).pack(side=tk.LEFT, padx=(0, 6))
 
-        ttk.Checkbutton(controls_frame, text="Bollinger", variable=self.var_show_bb, command=self._update_chart).pack(side=tk.LEFT, padx=2)
+        ttk.Checkbutton(
+            controls_frame, text="Bollinger", variable=self.var_show_bb, command=self._update_chart
+        ).pack(side=tk.LEFT, padx=2)
         self.var_bb_period = tk.IntVar(value=20)
-        tk.Spinbox(controls_frame, from_=5, to=300, width=4, textvariable=self.var_bb_period, command=self._update_chart).pack(side=tk.LEFT)
+        tk.Spinbox(
+            controls_frame,
+            from_=5,
+            to=300,
+            width=4,
+            textvariable=self.var_bb_period,
+            command=self._update_chart,
+        ).pack(side=tk.LEFT)
         ttk.Label(controls_frame, text="σ").pack(side=tk.LEFT)
         self.var_bb_std = tk.DoubleVar(value=2.0)
-        tk.Spinbox(controls_frame, from_=1.0, to=4.0, increment=0.5, width=4, textvariable=self.var_bb_std, command=self._update_chart).pack(side=tk.LEFT, padx=(0, 6))
+        tk.Spinbox(
+            controls_frame,
+            from_=1.0,
+            to=4.0,
+            increment=0.5,
+            width=4,
+            textvariable=self.var_bb_std,
+            command=self._update_chart,
+        ).pack(side=tk.LEFT, padx=(0, 6))
 
-        ttk.Checkbutton(controls_frame, text="RSI", variable=self.var_show_rsi, command=self._update_chart).pack(side=tk.LEFT, padx=2)
-        ttk.Checkbutton(controls_frame, text="MACD", variable=self.var_show_macd, command=self._update_chart).pack(side=tk.LEFT, padx=2)
+        ttk.Checkbutton(
+            controls_frame, text="RSI", variable=self.var_show_rsi, command=self._update_chart
+        ).pack(side=tk.LEFT, padx=2)
+        ttk.Checkbutton(
+            controls_frame, text="MACD", variable=self.var_show_macd, command=self._update_chart
+        ).pack(side=tk.LEFT, padx=2)
 
-        ttk.Checkbutton(controls_frame, text="Candles", variable=self.var_show_candles, command=self._update_chart).pack(side=tk.LEFT, padx=8)
+        ttk.Checkbutton(
+            controls_frame,
+            text="Candles",
+            variable=self.var_show_candles,
+            command=self._update_chart,
+        ).pack(side=tk.LEFT, padx=8)
 
         # Bouton de rafraîchissement
-        ttk.Button(controls_frame, text="🔄 Actualiser", command=self._load_symbol_data).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(controls_frame, text="🔄 Actualiser", command=self._load_symbol_data).pack(
+            side=tk.RIGHT, padx=5
+        )
 
         # Zone graphique
         if HAS_MPL:
@@ -192,7 +273,9 @@ class SymbolAnalyzer:
             self.canvas = FigureCanvasTkAgg(self.figure, chart_tab)
             self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         else:
-            ttk.Label(chart_tab, text="Matplotlib non disponible", font=("Arial", 16)).pack(expand=True)
+            ttk.Label(chart_tab, text="Matplotlib non disponible", font=("Arial", 16)).pack(
+                expand=True
+            )
 
     def _create_analysis_tab(self, notebook):
         """Crée l'onglet des analyses techniques."""
@@ -205,7 +288,9 @@ class SymbolAnalyzer:
 
         # Treeview pour afficher les analyses
         columns = ("indicator", "value", "signal", "description")
-        self.tree_analysis = ttk.Treeview(analysis_frame, columns=columns, show="headings", height=15)
+        self.tree_analysis = ttk.Treeview(
+            analysis_frame, columns=columns, show="headings", height=15
+        )
 
         # Configuration des colonnes
         self.tree_analysis.heading("indicator", text="Indicateur")
@@ -221,7 +306,9 @@ class SymbolAnalyzer:
         self.tree_analysis.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         # Scrollbar
-        scrollbar_analysis = ttk.Scrollbar(analysis_frame, orient=tk.VERTICAL, command=self.tree_analysis.yview)
+        scrollbar_analysis = ttk.Scrollbar(
+            analysis_frame, orient=tk.VERTICAL, command=self.tree_analysis.yview
+        )
         scrollbar_analysis.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree_analysis.configure(yscrollcommand=scrollbar_analysis.set)
 
@@ -239,7 +326,9 @@ class SymbolAnalyzer:
         self.txt_strategies.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         # Scrollbar pour le texte
-        scrollbar_strategies = ttk.Scrollbar(strategy_frame, orient=tk.VERTICAL, command=self.txt_strategies.yview)
+        scrollbar_strategies = ttk.Scrollbar(
+            strategy_frame, orient=tk.VERTICAL, command=self.txt_strategies.yview
+        )
         scrollbar_strategies.pack(side=tk.RIGHT, fill=tk.Y)
         self.txt_strategies.configure(yscrollcommand=scrollbar_strategies.set)
 
@@ -250,14 +339,24 @@ class SymbolAnalyzer:
         # Backtest params
         ttk.Label(action_frame, text="SMA Rapide:").pack(side=tk.LEFT)
         self.var_bt_fast = tk.IntVar(value=10)
-        tk.Spinbox(action_frame, from_=3, to=200, width=4, textvariable=self.var_bt_fast).pack(side=tk.LEFT, padx=(0, 8))
+        tk.Spinbox(action_frame, from_=3, to=200, width=4, textvariable=self.var_bt_fast).pack(
+            side=tk.LEFT, padx=(0, 8)
+        )
         ttk.Label(action_frame, text="SMA Lente:").pack(side=tk.LEFT)
         self.var_bt_slow = tk.IntVar(value=30)
-        tk.Spinbox(action_frame, from_=5, to=300, width=4, textvariable=self.var_bt_slow).pack(side=tk.LEFT, padx=(0, 12))
+        tk.Spinbox(action_frame, from_=5, to=300, width=4, textvariable=self.var_bt_slow).pack(
+            side=tk.LEFT, padx=(0, 12)
+        )
 
-        ttk.Button(action_frame, text="📊 Backtesting", command=self._run_backtest).pack(side=tk.LEFT, padx=5)
-        ttk.Button(action_frame, text="📈 Simulation", command=self._run_simulation).pack(side=tk.LEFT, padx=5)
-        ttk.Button(action_frame, text="🎯 Optimisation", command=self._optimize_strategy).pack(side=tk.LEFT, padx=5)
+        ttk.Button(action_frame, text="📊 Backtesting", command=self._run_backtest).pack(
+            side=tk.LEFT, padx=5
+        )
+        ttk.Button(action_frame, text="📈 Simulation", command=self._run_simulation).pack(
+            side=tk.LEFT, padx=5
+        )
+        ttk.Button(action_frame, text="🎯 Optimisation", command=self._optimize_strategy).pack(
+            side=tk.LEFT, padx=5
+        )
 
         # Surveillance IA
         monitor_frame = ttk.LabelFrame(strategy_tab, text="Surveillance IA")
@@ -265,11 +364,19 @@ class SymbolAnalyzer:
         self.var_mon_sma = tk.BooleanVar(value=True)
         self.var_mon_rsi = tk.BooleanVar(value=False)
         self.var_mon_interval = tk.IntVar(value=60)
-        ttk.Checkbutton(monitor_frame, text="Croisement SMA (rapide/lente)", variable=self.var_mon_sma).pack(side=tk.LEFT, padx=5)
-        ttk.Checkbutton(monitor_frame, text="RSI (30/70)", variable=self.var_mon_rsi).pack(side=tk.LEFT, padx=5)
+        ttk.Checkbutton(
+            monitor_frame, text="Croisement SMA (rapide/lente)", variable=self.var_mon_sma
+        ).pack(side=tk.LEFT, padx=5)
+        ttk.Checkbutton(monitor_frame, text="RSI (30/70)", variable=self.var_mon_rsi).pack(
+            side=tk.LEFT, padx=5
+        )
         ttk.Label(monitor_frame, text="Toutes les (s):").pack(side=tk.LEFT)
-        tk.Spinbox(monitor_frame, from_=15, to=600, width=5, textvariable=self.var_mon_interval).pack(side=tk.LEFT, padx=(0, 10))
-        self.btn_monitor = ttk.Button(monitor_frame, text="Démarrer", command=self._toggle_monitoring)
+        tk.Spinbox(
+            monitor_frame, from_=15, to=600, width=5, textvariable=self.var_mon_interval
+        ).pack(side=tk.LEFT, padx=(0, 10))
+        self.btn_monitor = ttk.Button(
+            monitor_frame, text="Démarrer", command=self._toggle_monitoring
+        )
         self.btn_monitor.pack(side=tk.LEFT, padx=5)
 
     def _create_news_tab(self, notebook):
@@ -306,13 +413,21 @@ class SymbolAnalyzer:
         controls_bar.pack(fill=tk.X, padx=5, pady=5)
 
         # Informations sur le symbole
-        self.lbl_symbol_info = ttk.Label(controls_bar, text=f"Analyse de {self.current_symbol}", font=("Arial", 12, "bold"))
+        self.lbl_symbol_info = ttk.Label(
+            controls_bar, text=f"Analyse de {self.current_symbol}", font=("Arial", 12, "bold")
+        )
         self.lbl_symbol_info.pack(side=tk.LEFT)
 
         # Boutons d'action
-        ttk.Button(controls_bar, text="💾 Sauvegarder analyse", command=self._save_analysis).pack(side=tk.RIGHT, padx=5)
-        ttk.Button(controls_bar, text="📤 Exporter données", command=self._export_data).pack(side=tk.RIGHT, padx=5)
-        ttk.Button(controls_bar, text="📱 Créer alerte", command=self._create_alert).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(controls_bar, text="💾 Sauvegarder analyse", command=self._save_analysis).pack(
+            side=tk.RIGHT, padx=5
+        )
+        ttk.Button(controls_bar, text="📤 Exporter données", command=self._export_data).pack(
+            side=tk.RIGHT, padx=5
+        )
+        ttk.Button(controls_bar, text="📱 Créer alerte", command=self._create_alert).pack(
+            side=tk.RIGHT, padx=5
+        )
 
     def _load_symbol_data(self):
         """Charge les données du symbole."""
@@ -329,12 +444,24 @@ class SymbolAnalyzer:
             try:
                 # Récupération des données
                 # Use resilient API wrappers (Alpha first, auto-fallback to Yahoo)
-                provider = getattr(self.api_manager, 'market', None) or self.api_manager.alpha_vantage
-                quote = self.api_manager.get_quote(self.current_symbol) if hasattr(self.api_manager, 'get_quote') else provider.get_quote(self.current_symbol)
+                provider = (
+                    getattr(self.api_manager, 'market', None) or self.api_manager.alpha_vantage
+                )
+                quote = (
+                    self.api_manager.get_quote(self.current_symbol)
+                    if hasattr(self.api_manager, 'get_quote')
+                    else provider.get_quote(self.current_symbol)
+                )
                 # Fetch according to chosen interval/period
-                interval = getattr(self, 'var_interval', None).get() if hasattr(self, 'var_interval') else '1day'
+                interval = (
+                    getattr(self, 'var_interval', None).get()
+                    if hasattr(self, 'var_interval')
+                    else '1day'
+                )
                 if hasattr(self.api_manager, 'get_time_series'):
-                    series = self.api_manager.get_time_series(self.current_symbol, interval=interval)
+                    series = self.api_manager.get_time_series(
+                        self.current_symbol, interval=interval
+                    )
                 else:
                     series = provider.get_time_series(self.current_symbol, interval=interval)
                 # Technical indicators computed locally (RSI/MACD)
@@ -344,7 +471,15 @@ class SymbolAnalyzer:
                     keys = list(series.keys())
                     time_series_key = next((k for k in keys if 'Time Series' in k), None)
                     if not time_series_key:
-                        time_series_key = next((k for k in keys if k.lower().startswith('weekly ') or k.lower().startswith('monthly ')), None)
+                        time_series_key = next(
+                            (
+                                k
+                                for k in keys
+                                if k.lower().startswith('weekly ')
+                                or k.lower().startswith('monthly ')
+                            ),
+                            None,
+                        )
                     ts = series.get(time_series_key) if time_series_key else None
                     if not ts:
                         # attempt structural detection
@@ -352,7 +487,9 @@ class SymbolAnalyzer:
                             if isinstance(v, dict):
                                 try:
                                     any_item = next(iter(v.values()))
-                                    if isinstance(any_item, dict) and any(sub_key.startswith('1. open') for sub_key in any_item.keys()):
+                                    if isinstance(any_item, dict) and any(
+                                        sub_key.startswith('1. open') for sub_key in any_item.keys()
+                                    ):
                                         ts = v
                                         break
                                 except Exception:
@@ -361,7 +498,9 @@ class SymbolAnalyzer:
                         items_sorted = list(sorted(ts.items()))
                         for _d, row in items_sorted:
                             try:
-                                closes_local.append(float(row.get('4. close') or row.get('4. Close') or 0.0))
+                                closes_local.append(
+                                    float(row.get('4. close') or row.get('4. Close') or 0.0)
+                                )
                             except Exception:
                                 closes_local.append(0.0)
                 except Exception:
@@ -388,12 +527,12 @@ class SymbolAnalyzer:
                         if macd_line and signal_line:
                             macd_series = {}
                             # align by shortest length
-                            L = min(len(macd_line), len(signal_line))
-                            base_idx = len(closes_local) - L
-                            for i in range(L):
+                            length = min(len(macd_line), len(signal_line))
+                            base_idx = len(closes_local) - length
+                            for i in range(length):
                                 macd_series[str(i + base_idx)] = {
-                                    'MACD': f"{float(macd_line[-L + i]):.6f}",
-                                    'MACD_Signal': f"{float(signal_line[-L + i]):.6f}"
+                                    'MACD': f"{float(macd_line[-length + i]):.6f}",
+                                    'MACD_Signal': f"{float(signal_line[-length + i]):.6f}",
                                 }
                             macd = {'Technical Analysis: MACD': macd_series}
                 except Exception:
@@ -406,7 +545,7 @@ class SymbolAnalyzer:
                     'series': series,
                     'rsi': rsi,
                     'macd': macd,
-                    'news': news
+                    'news': news,
                 }
 
                 # Mise à jour de l'interface dans le thread principal (si fenêtre encore présente)
@@ -459,7 +598,10 @@ class SymbolAnalyzer:
                 0.5,
                 0.5,
                 f"Aucune donnée disponible pour {self.current_symbol}",
-                ha='center', va='center', transform=ax.transAxes, fontsize=14,
+                ha='center',
+                va='center',
+                transform=ax.transAxes,
+                fontsize=14,
             )
             self.canvas.draw()
             return
@@ -468,7 +610,14 @@ class SymbolAnalyzer:
         keys = list(series_all.keys())
         time_series_key = next((k for k in keys if 'Time Series' in k), None)
         if not time_series_key:
-            time_series_key = next((k for k in keys if k.lower().startswith('weekly ') or k.lower().startswith('monthly ')), None)
+            time_series_key = next(
+                (
+                    k
+                    for k in keys
+                    if k.lower().startswith('weekly ') or k.lower().startswith('monthly ')
+                ),
+                None,
+            )
         # Fallback: détection structurelle d'une mapping OHLC
         if not time_series_key:
             for k, v in series_all.items():
@@ -479,7 +628,8 @@ class SymbolAnalyzer:
                     except StopIteration:
                         continue
                     if isinstance(any_item, dict) and any(
-                        sub_key.startswith('1. open') or sub_key.startswith('1. Open') for sub_key in any_item.keys()
+                        sub_key.startswith('1. open') or sub_key.startswith('1. Open')
+                        for sub_key in any_item.keys()
                     ):
                         time_series_key = k
                         break
@@ -487,9 +637,13 @@ class SymbolAnalyzer:
         if not time_series_key:
             ax = self.figure.add_subplot(111)
             ax.text(
-                0.5, 0.5,
+                0.5,
+                0.5,
                 f"Aucune donnée disponible pour {self.current_symbol}",
-                ha='center', va='center', transform=ax.transAxes, fontsize=14,
+                ha='center',
+                va='center',
+                transform=ax.transAxes,
+                fontsize=14,
             )
             self.canvas.draw()
             return
@@ -504,12 +658,12 @@ class SymbolAnalyzer:
         volumes: list[int] = []
 
         try:
-            N = int(self.var_period.get()) if hasattr(self, 'var_period') else 30
+            n = int(self.var_period.get()) if hasattr(self, 'var_period') else 30
         except Exception:
-            N = 30
-        N = min(max(N, 1), 300)
+            n = 30
+        n = min(max(n, 1), 300)
 
-        for _, data in list(sorted(time_series.items()))[-N:]:
+        for _, data in list(sorted(time_series.items()))[-n:]:
             opens.append(float(data.get('1. open') or data.get('1. Open') or 0))
             highs.append(float(data.get('2. high') or data.get('2. High') or 0))
             lows.append(float(data.get('3. low') or data.get('3. Low') or 0))
@@ -526,6 +680,7 @@ class SymbolAnalyzer:
         if show_candles and len(closes) > 0:
             try:
                 from matplotlib.patches import Rectangle  # type: ignore
+
                 for i in range(len(closes)):
                     c_open, c_close, c_high, c_low = opens[i], closes[i], highs[i], lows[i]
                     color = '#16a34a' if c_close >= c_open else '#dc2626'
@@ -534,7 +689,9 @@ class SymbolAnalyzer:
                     height = abs(c_close - c_open) or 1e-9
                     ax1.add_patch(Rectangle((i - 0.3, bottom), 0.6, height, color=color, alpha=0.8))
             except Exception:
-                ax1.plot(range(len(closes)), closes, label='Prix de clôture', color='blue', linewidth=2)
+                ax1.plot(
+                    range(len(closes)), closes, label='Prix de clôture', color='blue', linewidth=2
+                )
         else:
             ax1.plot(range(len(closes)), closes, label='Prix de clôture', color='blue', linewidth=2)
 
@@ -555,10 +712,18 @@ class SymbolAnalyzer:
             p = max(5, int(self.var_bb_period.get())) if hasattr(self, 'var_bb_period') else 20
             std = float(self.var_bb_std.get()) if hasattr(self, 'var_bb_std') else 2.0
             if len(closes) >= p:
-                bb_upper, bb_middle, bb_lower = self._calculate_bollinger_bands(closes, p, std_dev=std)
-                ax1.plot(range(len(bb_upper)), bb_upper, label='BB Supérieure', color='gray', alpha=0.45)
-                ax1.plot(range(len(bb_middle)), bb_middle, label='BB Moyenne', color='gray', alpha=0.6)
-                ax1.plot(range(len(bb_lower)), bb_lower, label='BB Inférieure', color='gray', alpha=0.45)
+                bb_upper, bb_middle, bb_lower = self._calculate_bollinger_bands(
+                    closes, p, std_dev=std
+                )
+                ax1.plot(
+                    range(len(bb_upper)), bb_upper, label='BB Supérieure', color='gray', alpha=0.45
+                )
+                ax1.plot(
+                    range(len(bb_middle)), bb_middle, label='BB Moyenne', color='gray', alpha=0.6
+                )
+                ax1.plot(
+                    range(len(bb_lower)), bb_lower, label='BB Inférieure', color='gray', alpha=0.45
+                )
                 ax1.fill_between(range(len(bb_upper)), bb_upper, bb_lower, alpha=0.08, color='gray')
 
         ax1.set_title(f"{self.current_symbol} - Analyse Technique")
@@ -573,7 +738,11 @@ class SymbolAnalyzer:
         ax1.grid(True, alpha=0.3)
 
         # Volume + RSI/MACD panel if selected
-        show_lower = getattr(self, 'var_show_rsi', None) and self.var_show_rsi.get() or (getattr(self, 'var_show_macd', None) and self.var_show_macd.get())
+        show_lower = (
+            getattr(self, 'var_show_rsi', None)
+            and self.var_show_rsi.get()
+            or (getattr(self, 'var_show_macd', None) and self.var_show_macd.get())
+        )
         if show_lower:
             ax2 = self.figure.add_subplot(313)
         else:
@@ -586,14 +755,22 @@ class SymbolAnalyzer:
         if show_lower:
             ax3 = self.figure.add_subplot(312)
             plotted = False
-            if getattr(self, 'var_show_rsi', None) and self.var_show_rsi.get() and len(closes) >= 15:
+            if (
+                getattr(self, 'var_show_rsi', None)
+                and self.var_show_rsi.get()
+                and len(closes) >= 15
+            ):
                 rsi = self._calculate_rsi(closes, 14)
                 ax3.plot(range(len(rsi)), rsi, label='RSI 14', color='#9333ea')
                 ax3.axhline(70, color='red', linestyle='--', alpha=0.6)
                 ax3.axhline(30, color='green', linestyle='--', alpha=0.6)
                 ax3.set_ylim(0, 100)
                 plotted = True
-            if getattr(self, 'var_show_macd', None) and self.var_show_macd.get() and len(closes) >= 35:
+            if (
+                getattr(self, 'var_show_macd', None)
+                and self.var_show_macd.get()
+                and len(closes) >= 35
+            ):
                 macd_line, signal_line, hist = self._calculate_macd(closes)
                 ax3.plot(range(len(macd_line)), macd_line, label='MACD', color='#2563eb')
                 ax3.plot(range(len(signal_line)), signal_line, label='Signal', color='#f59e0b')
@@ -632,11 +809,20 @@ class SymbolAnalyzer:
             change_pct = quote.get('10. change percent', '0%').replace('%', '')
 
             # Signal de tendance basé sur le changement
-            trend_signal = "🟢 HAUSSIER" if change > 0 else "🔴 BAISSIER" if change < 0 else "🟡 NEUTRE"
+            trend_signal = (
+                "🟢 HAUSSIER" if change > 0 else "🔴 BAISSIER" if change < 0 else "🟡 NEUTRE"
+            )
 
-            self.tree_analysis.insert("", "end", values=(
-                "Prix actuel", f"${price:.2f}", trend_signal, f"Changement: ${change:.2f} ({change_pct}%)"
-            ))
+            self.tree_analysis.insert(
+                "",
+                "end",
+                values=(
+                    "Prix actuel",
+                    f"${price:.2f}",
+                    trend_signal,
+                    f"Changement: ${change:.2f} ({change_pct}%)",
+                ),
+            )
 
         # Analyse RSI
         rsi_data = self.current_data.get('rsi', {})
@@ -656,9 +842,9 @@ class SymbolAnalyzer:
                     rsi_signal = "🟡 NEUTRE"
                     rsi_desc = "RSI entre 30 et 70: Pas de signal extrême"
 
-                self.tree_analysis.insert("", "end", values=(
-                    "RSI (14)", f"{rsi_value:.2f}", rsi_signal, rsi_desc
-                ))
+                self.tree_analysis.insert(
+                    "", "end", values=("RSI (14)", f"{rsi_value:.2f}", rsi_signal, rsi_desc)
+                )
 
         # Analyse MACD
         macd_data = self.current_data.get('macd', {})
@@ -676,9 +862,9 @@ class SymbolAnalyzer:
                     macd_signal = "🔴 VENTE"
                     macd_desc = "MACD en-dessous du signal: Tendance baissière"
 
-                self.tree_analysis.insert("", "end", values=(
-                    "MACD", f"{macd_value:.4f}", macd_signal, macd_desc
-                ))
+                self.tree_analysis.insert(
+                    "", "end", values=("MACD", f"{macd_value:.4f}", macd_signal, macd_desc)
+                )
 
         # Ajout d'analyses synthétiques
         self._add_synthetic_analysis()
@@ -699,9 +885,16 @@ class SymbolAnalyzer:
                 sentiment_signal = "🟡 NEUTRE"
                 sentiment_desc = "Sentiment des actualités mitigé"
 
-            self.tree_analysis.insert("", "end", values=(
-                "Sentiment News", f"{sentiment_score:.2f}", sentiment_signal, sentiment_desc
-            ))
+            self.tree_analysis.insert(
+                "",
+                "end",
+                values=(
+                    "Sentiment News",
+                    f"{sentiment_score:.2f}",
+                    sentiment_signal,
+                    sentiment_desc,
+                ),
+            )
 
         # Score global de recommandation
         overall_score = self._calculate_overall_score()
@@ -721,9 +914,9 @@ class SymbolAnalyzer:
             overall_signal = "🟡 ATTENTE"
             overall_desc = "Signaux mitigés, attendre confirmation"
 
-        self.tree_analysis.insert("", "end", values=(
-            "Score Global", f"{overall_score:.2f}", overall_signal, overall_desc
-        ))
+        self.tree_analysis.insert(
+            "", "end", values=("Score Global", f"{overall_score:.2f}", overall_signal, overall_desc)
+        )
 
     def _update_strategies(self):
         """Met à jour l'onglet des stratégies."""
@@ -968,7 +1161,7 @@ class SymbolAnalyzer:
 
         sma = []
         for i in range(period - 1, len(prices)):
-            sma.append(sum(prices[i - period + 1:i + 1]) / period)
+            sma.append(sum(prices[i - period + 1 : i + 1]) / period)
 
         return sma
 
@@ -995,7 +1188,7 @@ class SymbolAnalyzer:
         lower_band = []
 
         for i in range(period - 1, len(prices)):
-            subset = prices[i - period + 1:i + 1]
+            subset = prices[i - period + 1 : i + 1]
             std = (sum([(x - sma[i - period + 1]) ** 2 for x in subset]) / period) ** 0.5
             upper_band.append(sma[i - period + 1] + (std * std_dev))
             lower_band.append(sma[i - period + 1] - (std * std_dev))
@@ -1037,7 +1230,8 @@ class SymbolAnalyzer:
             self.figure.clear()
             ax = self.figure.add_subplot(111)
             ax.text(
-                0.5, 0.5,
+                0.5,
+                0.5,
                 "APIs externes non configurées\n\nVeuillez configurer les clés API dans .env",
                 ha='center',
                 va='center',
@@ -1106,6 +1300,7 @@ class SymbolAnalyzer:
                         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, pady=8)
                         canvas.draw()
                     ttk.Button(frm, text='Fermer', command=win.destroy).pack(anchor='e')
+
                 # ensure UI exists
                 try:
                     w = self.window
@@ -1144,7 +1339,7 @@ class SymbolAnalyzer:
                     cap = start_cap
                     for _d in range(horizon):
                         r = random.choice(rets)  # bootstrap
-                        cap *= (1.0 + r)
+                        cap *= 1.0 + r
                     outcomes.append(cap)
                 outcomes.sort()
                 p5 = outcomes[int(0.05 * runs)]
@@ -1180,6 +1375,7 @@ class SymbolAnalyzer:
                         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, pady=8)
                         canvas.draw()
                     ttk.Button(frm, text='Fermer', command=win.destroy).pack(anchor='e')
+
                 try:
                     w = self.window
                     if w and int(w.winfo_exists()):
@@ -1210,8 +1406,38 @@ class SymbolAnalyzer:
                 # Utilise les voisinages autour des paramètres actuels
                 base_f = int(self.var_bt_fast.get()) if hasattr(self, 'var_bt_fast') else 10
                 base_s = int(self.var_bt_slow.get()) if hasattr(self, 'var_bt_slow') else 30
-                candidates_fast = sorted(set([max(3, base_f-2), base_f-1, base_f, base_f+1, base_f+2, 5, 8, 12, 15]))
-                candidates_slow = sorted(set([max(5, base_s-10), base_s-5, base_s, base_s+5, base_s+10, 20, 30, 40, 50, 100, 150]))
+                candidates_fast = sorted(
+                    set(
+                        [
+                            max(3, base_f - 2),
+                            base_f - 1,
+                            base_f,
+                            base_f + 1,
+                            base_f + 2,
+                            5,
+                            8,
+                            12,
+                            15,
+                        ]
+                    )
+                )
+                candidates_slow = sorted(
+                    set(
+                        [
+                            max(5, base_s - 10),
+                            base_s - 5,
+                            base_s,
+                            base_s + 5,
+                            base_s + 10,
+                            20,
+                            30,
+                            40,
+                            50,
+                            100,
+                            150,
+                        ]
+                    )
+                )
                 results = []
                 for f in candidates_fast:
                     for s in candidates_slow:
@@ -1240,6 +1466,7 @@ class SymbolAnalyzer:
                     tv.insert(1.0, text_final)
                     tv.configure(state=tk.DISABLED)
                     ttk.Button(frm, text='Fermer', command=win.destroy).pack(anchor='e')
+
                 try:
                     w = self.window
                     if w and int(w.winfo_exists()):
@@ -1266,7 +1493,14 @@ class SymbolAnalyzer:
         keys = list(series_all.keys())
         time_series_key = next((k for k in keys if 'Time Series' in k), None)
         if not time_series_key:
-            time_series_key = next((k for k in keys if k.lower().startswith('weekly ') or k.lower().startswith('monthly ')), None)
+            time_series_key = next(
+                (
+                    k
+                    for k in keys
+                    if k.lower().startswith('weekly ') or k.lower().startswith('monthly ')
+                ),
+                None,
+            )
         if not time_series_key:
             for k, v in series_all.items():
                 if isinstance(v, dict):
@@ -1275,7 +1509,8 @@ class SymbolAnalyzer:
                     except StopIteration:
                         continue
                     if isinstance(any_item, dict) and any(
-                        sub_key.startswith('1. open') or sub_key.startswith('1. Open') for sub_key in any_item.keys()
+                        sub_key.startswith('1. open') or sub_key.startswith('1. Open')
+                        for sub_key in any_item.keys()
                     ):
                         time_series_key = k
                         break
@@ -1290,9 +1525,9 @@ class SymbolAnalyzer:
     def _daily_returns(self, closes):
         rets = []
         for i in range(1, len(closes)):
-            prev, nxt = closes[i-1], closes[i]
+            prev, nxt = closes[i - 1], closes[i]
             if prev and nxt:
-                rets.append((nxt/prev) - 1.0)
+                rets.append((nxt / prev) - 1.0)
         return rets
 
     def _max_drawdown(self, equity):
@@ -1301,7 +1536,7 @@ class SymbolAnalyzer:
         for v in equity:
             if v > peak:
                 peak = v
-            dd = (v/peak) - 1.0 if peak else 0.0
+            dd = (v / peak) - 1.0 if peak else 0.0
             if dd < mdd:
                 mdd = dd
         return abs(mdd)
@@ -1309,7 +1544,7 @@ class SymbolAnalyzer:
     def _sharpe(self, rets):
         if not rets:
             return 0.0
-        mu = statistics.fmean(rets) if hasattr(statistics, 'fmean') else sum(rets)/len(rets)
+        mu = statistics.fmean(rets) if hasattr(statistics, 'fmean') else sum(rets) / len(rets)
         sd = statistics.pstdev(rets) if len(rets) > 1 else 0.0
         if sd == 0:
             return 0.0
@@ -1323,8 +1558,8 @@ class SymbolAnalyzer:
         sma_f = self._calculate_sma(closes, fast)
         sma_s = self._calculate_sma(closes, slow)
         # align lengths to closes: pad with Nones at beginning to match index
-        pad_f = [None]*(fast-1) + sma_f
-        pad_s = [None]*(slow-1) + sma_s
+        pad_f = [None] * (fast - 1) + sma_f
+        pad_s = [None] * (slow - 1) + sma_s
         pos = 0  # 0 cash, 1 long
         equity = [1.0]
         trades = 0
@@ -1342,13 +1577,13 @@ class SymbolAnalyzer:
                     if daily and sum(daily[-5:]) > 0:  # crude win heuristic
                         wins += 1
                 pos = new_pos
-            r = (closes[i]/closes[i-1]) - 1.0
+            r = (closes[i] / closes[i - 1]) - 1.0
             pr = r * pos
             daily.append(pr)
             equity.append(equity[-1] * (1.0 + pr))
-        total_return = (equity[-1] - 1.0)
-        years = max(1e-9, len(daily)/252.0)
-        cagr = (equity[-1] ** (1/years)) - 1.0 if equity[-1] > 0 else -1.0
+        total_return = equity[-1] - 1.0
+        years = max(1e-9, len(daily) / 252.0)
+        cagr = (equity[-1] ** (1 / years)) - 1.0 if equity[-1] > 0 else -1.0
         mdd = self._max_drawdown(equity)
         shp = self._sharpe(daily)
         win_rate = (wins / trades) if trades else 0.0
@@ -1369,14 +1604,20 @@ class SymbolAnalyzer:
         if hasattr(self, 'btn_monitor') and self.btn_monitor:
             self.btn_monitor.config(text='Arrêter' if self._monitoring_active else 'Démarrer')
         if self._monitoring_active:
-            self._last_signal_state = getattr(self, '_last_signal_state', {'sma': None, 'rsi': None})
+            self._last_signal_state = getattr(
+                self, '_last_signal_state', {'sma': None, 'rsi': None}
+            )
             self._monitor_tick()
 
     def _monitor_tick(self):
         if not getattr(self, '_monitoring_active', False):
             return
         try:
-            interval = getattr(self, 'var_interval', None).get() if hasattr(self, 'var_interval') else '1day'
+            interval = (
+                getattr(self, 'var_interval', None).get()
+                if hasattr(self, 'var_interval')
+                else '1day'
+            )
             if self.api_manager and hasattr(self.api_manager, 'get_time_series'):
                 series = self.api_manager.get_time_series(self.current_symbol, interval=interval)
             else:
@@ -1385,29 +1626,49 @@ class SymbolAnalyzer:
                 self.current_data['series'] = series
                 _, closes = self._extract_closes(limit=400)
                 # SMA crossover alert
-                if getattr(self, 'var_mon_sma', None) and self.var_mon_sma.get() and len(closes) > 60:
+                if (
+                    getattr(self, 'var_mon_sma', None)
+                    and self.var_mon_sma.get()
+                    and len(closes) > 60
+                ):
                     f = int(self.var_bt_fast.get()) if hasattr(self, 'var_bt_fast') else 10
                     s = int(self.var_bt_slow.get()) if hasattr(self, 'var_bt_slow') else 30
                     prev_state, new_state = self._detect_sma_cross(closes, f, s)
                     if prev_state != new_state and new_state in ('bull', 'bear'):
-                        self._emit_alert('SMA Crossover', f"{self.current_symbol}: Croisement {new_state.upper()} (SMA{f}/{s})", level='WARN')
+                        self._emit_alert(
+                            'SMA Crossover',
+                            f"{self.current_symbol}: Croisement {new_state.upper()} (SMA{f}/{s})",
+                            level='WARN',
+                        )
                         self._last_signal_state['sma'] = new_state
                 # RSI thresholds alert
-                if getattr(self, 'var_mon_rsi', None) and self.var_mon_rsi.get() and len(closes) > 20:
+                if (
+                    getattr(self, 'var_mon_rsi', None)
+                    and self.var_mon_rsi.get()
+                    and len(closes) > 20
+                ):
                     rsi = self._calculate_rsi(closes, 14)
                     if len(rsi) >= 2:
                         curr = rsi[-1]
-                        state = 'overbought' if curr > 70 else 'oversold' if curr < 30 else 'neutral'
+                        state = (
+                            'overbought' if curr > 70 else 'oversold' if curr < 30 else 'neutral'
+                        )
                         last = self._last_signal_state.get('rsi')
                         if last != state and state in ('overbought', 'oversold'):
                             label = 'RSI > 70' if state == 'overbought' else 'RSI < 30'
-                            self._emit_alert('RSI Seuil', f"{self.current_symbol}: {label}", level='INFO')
+                            self._emit_alert(
+                                'RSI Seuil', f"{self.current_symbol}: {label}", level='INFO'
+                            )
                             self._last_signal_state['rsi'] = state
         except Exception:
             pass
         # Reschedule
         try:
-            delay = max(15, int(self.var_mon_interval.get())) * 1000 if hasattr(self, 'var_mon_interval') else 60000
+            delay = (
+                max(15, int(self.var_mon_interval.get())) * 1000
+                if hasattr(self, 'var_mon_interval')
+                else 60000
+            )
         except Exception:
             delay = 60000
         try:
@@ -1437,11 +1698,11 @@ class SymbolAnalyzer:
     def _detect_sma_cross(self, closes, fast, slow):
         sma_f = self._calculate_sma(closes, fast)
         sma_s = self._calculate_sma(closes, slow)
-        pad_f = [None]*(fast-1) + sma_f
-        pad_s = [None]*(slow-1) + sma_s
+        pad_f = [None] * (fast - 1) + sma_f
+        pad_s = [None] * (slow - 1) + sma_s
         last_diff = None
         prev_state = getattr(self, '_last_signal_state', {}).get('sma')
-        for i in range(len(closes)-2, len(closes)):
+        for i in range(len(closes) - 2, len(closes)):
             if i <= 0 or i >= len(pad_f) or i >= len(pad_s):
                 continue
             if pad_f[i] is None or pad_s[i] is None:
@@ -1452,8 +1713,13 @@ class SymbolAnalyzer:
         new_state = prev_state
         try:
             i = len(closes) - 1
-            if pad_f[i] is not None and pad_s[i] is not None and pad_f[i-1] is not None and pad_s[i-1] is not None:
-                prev_diff = pad_f[i-1] - pad_s[i-1]
+            if (
+                pad_f[i] is not None
+                and pad_s[i] is not None
+                and pad_f[i - 1] is not None
+                and pad_s[i - 1] is not None
+            ):
+                prev_diff = pad_f[i - 1] - pad_s[i - 1]
                 curr_diff = pad_f[i] - pad_s[i]
                 if prev_diff <= 0 and curr_diff > 0:
                     new_state = 'bull'
@@ -1470,16 +1736,16 @@ class SymbolAnalyzer:
         gains = []
         losses = []
         for i in range(1, len(prices)):
-            ch = prices[i] - prices[i-1]
+            ch = prices[i] - prices[i - 1]
             gains.append(max(0.0, ch))
             losses.append(max(0.0, -ch))
         # Wilder's smoothing
         avg_gain = sum(gains[:period]) / period
         avg_loss = sum(losses[:period]) / period
-        rsi = [None]*period
-        for i in range(period, len(prices)-1):
-            avg_gain = (avg_gain*(period-1) + gains[i]) / period
-            avg_loss = (avg_loss*(period-1) + losses[i]) / period
+        rsi = [None] * period
+        for i in range(period, len(prices) - 1):
+            avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+            avg_loss = (avg_loss * (period - 1) + losses[i]) / period
             rs = (avg_gain / avg_loss) if avg_loss != 0 else float('inf')
             val = 100 - (100 / (1 + rs)) if rs != float('inf') else 100.0
             rsi.append(val)
@@ -1491,15 +1757,20 @@ class SymbolAnalyzer:
         ema_fast = self._calculate_ema(prices, fast)
         ema_slow = self._calculate_ema(prices, slow)
         # Align
-        pad_fast = [None]*(fast-1) + ema_fast
-        pad_slow = [None]*(slow-1) + ema_slow
+        pad_fast = [None] * (fast - 1) + ema_fast
+        pad_slow = [None] * (slow - 1) + ema_slow
         macd_line = []
         for i in range(len(prices)):
-            if i < len(pad_fast) and i < len(pad_slow) and pad_fast[i] is not None and pad_slow[i] is not None:
+            if (
+                i < len(pad_fast)
+                and i < len(pad_slow)
+                and pad_fast[i] is not None
+                and pad_slow[i] is not None
+            ):
                 macd_line.append(pad_fast[i] - pad_slow[i])
         signal_line = self._calculate_ema(macd_line, signal) if len(macd_line) >= signal else []
         # align
-        pad_signal = [None]*(signal-1) + signal_line
+        pad_signal = [None] * (signal - 1) + signal_line
         hist = []
         for i in range(len(macd_line)):
             s = pad_signal[i] if i < len(pad_signal) else None

@@ -7,7 +7,10 @@ class DummyAPIManager:
     class News:
         def get_company_news(self, symbol, limit):
             return [
-                {"title": "Company gains market share", "description": "Positive growth and strong rise"},
+                {
+                    "title": "Company gains market share",
+                    "description": "Positive growth and strong rise",
+                },
                 {"title": "Earnings miss expectations", "description": "weak decline and fall"},
                 {"title": None, "description": None},  # robustness
             ]
@@ -18,7 +21,7 @@ class DummyAPIManager:
         self.alpha_vantage = types.SimpleNamespace(
             get_quote=lambda s: {},
             get_intraday=lambda s, i: {},
-            get_technical_indicators=lambda s, ind: {}
+            get_technical_indicators=lambda s, ind: {},
         )
 
 

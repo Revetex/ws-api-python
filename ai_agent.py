@@ -10,22 +10,35 @@ Future integration (Gemini 1.5 Flash):
  Implement call_gemini(prompt: str, system: str) using Google API client.
  The UI can toggle between local rules and LLM suggestions.
 """
+
 from __future__ import annotations
-from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Any, Tuple
-import os
-import time
+
 import json
+import os
 import re
+import time
+from dataclasses import dataclass, field
+from typing import Any
 
 try:
     import requests  # type: ignore
+
     HAS_REQUESTS = True
 except Exception:  # pragma: no cover - should always be present per requirements
     HAS_REQUESTS = False
 
+# Prefer shared HTTP client when available (falls back to requests under the hood)
+try:  # type: ignore
+    from utils.http_client import HTTPClient  # noqa: F401
+
+    HAS_HTTPCLIENT = True
+except Exception:  # pragma: no cover
+    HTTPClient = None  # type: ignore
+    HAS_HTTPCLIENT = False
+
 try:
     from external_apis import APIManager
+
     HAS_EXTERNAL_APIS = True
 except ImportError:
     HAS_EXTERNAL_APIS = False
@@ -38,9 +51,9 @@ class Position:
     name: str
     quantity: float
     value: float
-    currency: Optional[str] = None
-    pnl_abs: Optional[float] = None
-    pnl_pct: Optional[float] = None
+    currency: str | None = None
+    pnl_abs: float | None = None
+    pnl_pct: float | None = None
 
 
 @dataclass
@@ -49,7 +62,7 @@ class Signal:
     level: str  # INFO/WARN/ALERT
     code: str
     message: str
-    meta: Dict = field(default_factory=dict)
+    meta: dict = field(default_factory=dict)
 
 
 class AIAgent:
@@ -63,26 +76,23 @@ class AIAgent:
     ):
         self.pnl_warn_pct = pnl_warn_pct
         self.pnl_alert_pct = pnl_alert_pct
-        self.history: List[Signal] = []
-        self.last_positions: List[Position] = []
+        self.history: list[Signal] = []
+        self.last_positions: list[Position] = []
         # Data-only mode (no heuristics, no LLMs). Env override: DATA_ONLY=1
         self.data_only = bool(data_only or os.getenv('DATA_ONLY', '0') == '1')
-        self._gemini_key = (
-            os.getenv('GEMINI_API_KEY') if enable_gemini else None
-        )
+        self._gemini_key = os.getenv('GEMINI_API_KEY') if enable_gemini else None
         self._gemini_model = 'gemini-1.5-flash'
         self._gemini_available = False
 
         # External APIs
         self.api_manager = APIManager() if HAS_EXTERNAL_APIS else None
         # Ensure this stays a boolean, not an object reference
-        self.enable_notifications = bool(
-            enable_notifications and self.api_manager is not None
-        )
+        self.enable_notifications = bool(enable_notifications and self.api_manager is not None)
 
         if self._gemini_key and not self.data_only:
             try:  # Lazy import; keep optional
                 import google.generativeai as genai  # type: ignore
+
                 genai.configure(api_key=self._gemini_key)
                 self._genai = genai
                 self._gemini_available = True
@@ -97,16 +107,35 @@ class AIAgent:
         )
         # Allow disabling via OLLAMA_DISABLE=1
         self._ollama_enabled = (os.getenv('OLLAMA_DISABLE', '0') != '1') and (not self.data_only)
-        self._ollama_endpoint = os.getenv(
-            'OLLAMA_ENDPOINT', 'http://localhost:11434'
-        ).rstrip('/')
+        self._ollama_endpoint = os.getenv('OLLAMA_ENDPOINT', 'http://localhost:11434').rstrip('/')
         self._ollama_available_checked = False
         self._ollama_available = False
+        # Local HTTP clients for Ollama (fast check vs. long generate)
+        self._http_ollama_fast = None
+        self._http_ollama_slow = None
+        if HAS_HTTPCLIENT:
+            try:
+                # Fast tag check with short timeout, no retries (keep UI snappy)
+                self._http_ollama_fast = HTTPClient(
+                    headers={'Accept': 'application/json'}, timeout=1.5, retries=0
+                )
+            except Exception:
+                self._http_ollama_fast = None
+            try:
+                # Generation can take longer; allow mild retry/backoff
+                self._http_ollama_slow = HTTPClient(
+                    headers={'Accept': 'application/json', 'Content-Type': 'application/json'},
+                    timeout=45.0,
+                    retries=1,
+                    backoff=0.5,
+                )
+            except Exception:
+                self._http_ollama_slow = None
         # Conversation memory (light) for multi‑tour context
-        self._history: List[Tuple[str, str]] = []  # (role, text)
+        self._history: list[tuple[str, str]] = []  # (role, text)
         self._history_max = 8
         # Cached metrics (recomputed on new positions)
-        self._last_metrics = {}  # type: Dict[str, Any]
+        self._last_metrics = {}  # type: dict[str, Any]
         # Optional predicate to decide if notifications are allowed (injected by UI)
         self.notifications_allowed = None  # optional predicate callable returning bool
         # Allow sending technical alerts (e.g., SMA BUY/SELL) to external notifiers
@@ -114,38 +143,37 @@ class AIAgent:
         # If GUI config is present, respect Telegram technical include setting
         try:
             from wsapp_gui.config import app_config  # type: ignore
+
             self.allow_technical_alerts = bool(
                 app_config.get('integrations.telegram.include_technical', True)
             )
         except Exception:
             pass
         # Technical signal cache to reduce API calls: symbol -> (ts, {signal,r5,r20})
-        self._tech_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+        self._tech_cache: dict[str, tuple[float, dict[str, Any]]] = {}
         self._tech_ttl_sec = 900  # 15 minutes
         # Rate-limit technical alerts emission per symbol
-        self._last_tech_emit: Dict[str, float] = {}
+        self._last_tech_emit: dict[str, float] = {}
         self._tech_emit_ttl_sec = 3600  # 1 hour
-        # --- Enhanced AI (feature-flagged) ---
+        # --- Enhanced AI (Advisor) ---
+        # Enable by default unless DATA_ONLY is active. Also create a lightweight
+        # context memory bridge to improve natural replies.
         self._enhanced_ai = None
         try:
-            cfg_enabled = False
-            try:
-                from wsapp_gui.config import app_config  # type: ignore
-                cfg_enabled = bool(app_config.get('ai.enhanced', False))
-            except Exception:
-                cfg_enabled = False
-            if (cfg_enabled or os.getenv('AI_ENHANCED', '0') == '1') and not self.data_only:
+            if not self.data_only:
                 from enhanced_ai_system import EnhancedAI  # type: ignore
-                # deterministic=False for some variety; rate-limit defaults are fine
+
                 self._enhanced_ai = EnhancedAI(deterministic=False)
         except Exception:
             self._enhanced_ai = None
+        # Small memory buffer used to seed EnhancedAI context
+        self._advisor_memory: list[tuple[str, str]] = []  # (role, text)
 
-    def _enrich_symbol_metrics(self, symbol: Optional[str]) -> Dict[str, Any]:
+    def _enrich_symbol_metrics(self, symbol: str | None) -> dict[str, Any]:
         """Return real-data metrics for a symbol: price, SMA5/20, RSI (if available),
         distance to SMA20, and 6-month high/low. Safe on errors. Data-only friendly.
         """
-        out: Dict[str, Any] = {}
+        out: dict[str, Any] = {}
         if not symbol or not self.api_manager:
             return out
         sym = str(symbol).upper()
@@ -179,7 +207,9 @@ class AIAgent:
             pass
         # RSI (compute locally from compact daily series)
         try:
-            series = self.api_manager.get_time_series(sym, interval='1day', outputsize='compact') or {}
+            series = (
+                self.api_manager.get_time_series(sym, interval='1day', outputsize='compact') or {}
+            )
             ts = None
             for k, v in series.items():
                 if isinstance(v, dict) and 'time series' in k.lower():
@@ -206,7 +236,9 @@ class AIAgent:
             pass
         # 6-month high/low from daily compact series (Yahoo fallback handles compact ~6mo)
         try:
-            series = self.api_manager.get_time_series(sym, interval='1day', outputsize='compact') or {}
+            series = (
+                self.api_manager.get_time_series(sym, interval='1day', outputsize='compact') or {}
+            )
             ts = None
             for k, v in series.items():
                 if 'time series' in k.lower() and isinstance(v, dict):
@@ -227,18 +259,18 @@ class AIAgent:
         return out
 
     # --- Local indicator helpers ---
-    def _calculate_rsi(self, prices: List[float], period: int = 14) -> List[float]:
+    def _calculate_rsi(self, prices: list[float], period: int = 14) -> list[float]:
         if not prices or len(prices) < period + 1:
             return []
-        gains: List[float] = []
-        losses: List[float] = []
+        gains: list[float] = []
+        losses: list[float] = []
         for i in range(1, len(prices)):
             ch = prices[i] - prices[i - 1]
             gains.append(max(0.0, ch))
             losses.append(max(0.0, -ch))
         avg_gain = sum(gains[:period]) / period
         avg_loss = sum(losses[:period]) / period
-        rsi: List[float] = []
+        rsi: list[float] = []
         # Wilder smoothing
         for i in range(period, len(gains)):
             avg_gain = (avg_gain * (period - 1) + gains[i]) / period
@@ -251,7 +283,7 @@ class AIAgent:
         return rsi
 
     # --- Public API ---
-    def on_positions(self, positions: List[dict]):
+    def on_positions(self, positions: list[dict]):
         self.last_positions = [
             Position(
                 symbol=p.get('symbol'),
@@ -266,12 +298,24 @@ class AIAgent:
             if p.get('symbol')
         ]
         self._compute_metrics()
+        # Share a compact event into advisor memory
+        try:
+            if getattr(self, '_enhanced_ai', None) is not None:
+                npos = len(self.last_positions)
+                total = sum(p.value for p in self.last_positions)
+                self._advisor_memory.append(
+                    ("event", f"positions_update n={npos} total={total:,.0f}")
+                )
+                if len(self._advisor_memory) > 16:
+                    self._advisor_memory = self._advisor_memory[-16:]
+        except Exception:
+            pass
         self._generate_signals()
 
-    def get_signals(self) -> List[Signal]:
+    def get_signals(self) -> list[Signal]:
         return list(self.history)[-200:]
 
-    def generate_market_signals(self) -> List[Signal]:
+    def generate_market_signals(self) -> list[Signal]:
         """Return fresh signals based on last known positions.
 
         Safe no-op if no positions. This mirrors internal rule-based checks
@@ -314,10 +358,7 @@ class AIAgent:
             return "Contexte de conversation ré-initialisé."
         if prompt_l == 'resume':
             total = sum(p.value for p in self.last_positions)
-            return (
-                f"Valeur totale ~ {total:,.2f}. Positions: "
-                f"{len(self.last_positions)}"
-            )
+            return f"Valeur totale ~ {total:,.2f}. Positions: {len(self.last_positions)}"
         if prompt_l == 'top':
             tops = sorted(
                 self.last_positions,
@@ -327,9 +368,7 @@ class AIAgent:
             lines = []
             for p in tops:
                 if p.pnl_pct is not None:
-                    lines.append(
-                        f"{p.symbol}: {p.value:,.2f} ({p.pnl_pct:.1f}%)"
-                    )
+                    lines.append(f"{p.symbol}: {p.value:,.2f} ({p.pnl_pct:.1f}%)")
                 else:
                     lines.append(f"{p.symbol}: {p.value:,.2f}")
             return '\n'.join(lines)
@@ -420,7 +459,11 @@ class AIAgent:
                 for s in sigs:
                     lines.append(self._format_signal_for_chat(s))
             # Technical snapshot for top 3 non-cash symbols
-            tops = [p for p in sorted(self.last_positions, key=lambda x: x.value, reverse=True) if p.symbol not in ('CAD', 'USD')][:3]
+            tops = [
+                p
+                for p in sorted(self.last_positions, key=lambda x: x.value, reverse=True)
+                if p.symbol not in ('CAD', 'USD')
+            ][:3]
             tech_lines = []
             if tops:
                 tech_lines.append("Tech SMA(5/20):")
@@ -430,7 +473,9 @@ class AIAgent:
                         r5 = bt.get('r5')
                         r20 = bt.get('r20')
                         if r5 is not None and r20 is not None:
-                            tech_lines.append(f" - {p.symbol}: {bt.get('signal', 'HOLD')} (SMA5={r5:.2f}, SMA20={r20:.2f})")
+                            tech_lines.append(
+                                f" - {p.symbol}: {bt.get('signal', 'HOLD')} (SMA5={r5:.2f}, SMA20={r20:.2f})"
+                            )
                         else:
                             tech_lines.append(f" - {p.symbol}: {bt.get('signal', 'HOLD')}")
             # Compose output prioritizing clarity
@@ -443,7 +488,12 @@ class AIAgent:
             return "Aucun signal pour le moment."
 
         # Backtest requests
-        if 'backtest' in prompt_l or 'backtesting' in prompt_l or 'backterté' in prompt_l or 'backterte' in prompt_l:
+        if (
+            'backtest' in prompt_l
+            or 'backtesting' in prompt_l
+            or 'backterté' in prompt_l
+            or 'backterte' in prompt_l
+        ):
             # Try to extract a symbol from the text or pick largest non-cash
             sym_list = self._find_symbols_in_text(prompt)
             sym = None
@@ -478,17 +528,38 @@ class AIAgent:
         if self.data_only:
             answer = self._chat_local_natural(prompt)
         else:
+            # Include short advisor memory summary if available
+            adv_ctx = ""
+            try:
+                if getattr(self, '_enhanced_ai', None) is not None and self._advisor_memory:
+                    tail = self._advisor_memory[-6:]
+                    adv_ctx = " | ".join(f"{r}:{t}" for r, t in tail)
+            except Exception:
+                adv_ctx = ""
             enriched_prompt = self._augment_user_prompt(prompt)
+            if adv_ctx:
+                enriched_prompt = enriched_prompt + f"\nContexte conseiller: {adv_ctx}"
             answer = None
             if self._ollama_enabled and self._ensure_ollama_available():
                 answer = self._chat_ollama(enriched_prompt)
-            if (not answer or (isinstance(answer, str) and answer.startswith('('))) and self._gemini_available:
+            if (
+                not answer or (isinstance(answer, str) and answer.startswith('('))
+            ) and self._gemini_available:
                 answer = self._chat_gemini(enriched_prompt)
             if not answer or (isinstance(answer, str) and answer.startswith('(')):
                 answer = self._chat_local_natural(prompt)
         # Track in history
         self._append_history('user', prompt)
         self._append_history('assistant', answer)
+        # Mirror minimal memory to advisor
+        try:
+            if getattr(self, '_enhanced_ai', None) is not None:
+                self._advisor_memory.append(("user", prompt))
+                self._advisor_memory.append(("assistant", answer))
+                if len(self._advisor_memory) > 16:
+                    self._advisor_memory = self._advisor_memory[-16:]
+        except Exception:
+            pass
         return answer
 
     def _format_signal_for_chat(self, s: Signal) -> str:
@@ -588,7 +659,9 @@ class AIAgent:
             pass
         try:
             if npos is not None and hhi_n is not None and top_share is not None:
-                num_lines.append(f"Diversif: HHI {float(hhi_n):.3f} | Top {float(top_share):.1f}% | #Pos {int(npos)}")
+                num_lines.append(
+                    f"Diversif: HHI {float(hhi_n):.3f} | Top {float(top_share):.1f}% | #Pos {int(npos)}"
+                )
         except Exception:
             pass
         if num_lines:
@@ -598,7 +671,7 @@ class AIAgent:
         return base
 
     # --- Metrics & context helpers ---
-    def _compute_metrics(self) -> Dict[str, Any]:
+    def _compute_metrics(self) -> dict[str, Any]:
         if not self.last_positions:
             self._last_metrics = {
                 'n_positions': 0,
@@ -624,9 +697,7 @@ class AIAgent:
             label = 'Moyenne'
         else:
             label = 'Faible'
-        cash_total = sum(
-            p.value for p in self.last_positions if p.symbol in ('CAD', 'USD')
-        )
+        cash_total = sum(p.value for p in self.last_positions if p.symbol in ('CAD', 'USD'))
         cash_ratio = (cash_total / total) * 100
         top_share = max(shares) * 100 if shares else 0.0
         self._last_metrics = {
@@ -671,12 +742,9 @@ class AIAgent:
                 return "Gemini non disponible (clé API manquante)."
             # Build concise portfolio context
             lines = []
-            for p in sorted(
-                self.last_positions, key=lambda x: x.value, reverse=True
-            )[:25]:
+            for p in sorted(self.last_positions, key=lambda x: x.value, reverse=True)[:25]:
                 lines.append(
-                    f"{p.symbol} qty={p.quantity} val={p.value:.2f} "
-                    f"pnl={p.pnl_pct or 0:.2f}%"
+                    f"{p.symbol} qty={p.quantity} val={p.value:.2f} " f"pnl={p.pnl_pct or 0:.2f}%"
                 )
             context = "\n".join(lines)
             system = (
@@ -691,12 +759,7 @@ class AIAgent:
                     {"role": "user", "parts": [system]},
                     {
                         "role": "user",
-                        "parts": [
-                            (
-                                f"Portefeuille:\n{context}\n\nQuestion: "
-                                f"{user_prompt}"
-                            )
-                        ],
+                        "parts": [(f"Portefeuille:\n{context}\n\nQuestion: " f"{user_prompt}")],
                     },
                 ]
             )
@@ -712,14 +775,22 @@ class AIAgent:
 
         We try only once per session (unless forced) to avoid UI latency.
         """
-        if not self._ollama_enabled or not HAS_REQUESTS:
+        # Allow operation if either HTTPClient or requests is available
+        if not self._ollama_enabled:
             return False
         if self._ollama_available_checked:
             return self._ollama_available
         self._ollama_available_checked = True
         try:
             # Quick /api/tags call (cheaper than generate) to see if server responds
-            r = requests.get(f"{self._ollama_endpoint}/api/tags", timeout=1.5)
+            url = f"{self._ollama_endpoint}/api/tags"
+            if self._http_ollama_fast is not None:
+                r = self._http_ollama_fast.get(url)
+            elif HAS_REQUESTS:
+                r = requests.get(url, timeout=1.5)
+            else:  # No HTTP available
+                self._ollama_available = False
+                return self._ollama_available
             if r.status_code == 200:
                 self._ollama_available = True
         except Exception:
@@ -735,7 +806,7 @@ class AIAgent:
             )
         return "\n".join(lines) or "(aucune position)"
 
-    def _find_symbols_in_text(self, text: str) -> List[str]:
+    def _find_symbols_in_text(self, text: str) -> list[str]:
         if not self.last_positions:
             return []
         text_up = text.upper()
@@ -801,7 +872,18 @@ class AIAgent:
             if snippets:
                 return "\n\n".join(snippets)
 
-        if any(k in pl for k in ["perf", "pnl", "gain", "perte", "comment ça va", "comment ca va", "comment va"]):
+        if any(
+            k in pl
+            for k in [
+                "perf",
+                "pnl",
+                "gain",
+                "perte",
+                "comment ça va",
+                "comment ca va",
+                "comment va",
+            ]
+        ):
             best = None
             worst = None
             have_pct = [p for p in self.last_positions if p.pnl_pct is not None]
@@ -843,7 +925,10 @@ class AIAgent:
         if not self.api_manager:
             return "Données de marché indisponibles."
         try:
-            data = self.api_manager.get_time_series(symbol, interval='1day', outputsize='compact') or {}
+            data = (
+                self.api_manager.get_time_series(symbol, interval='1day', outputsize='compact')
+                or {}
+            )
             # Find the time series dict regardless of exact key
             series = None
             for k, v in data.items():
@@ -863,7 +948,7 @@ class AIAgent:
                 closes.append(c)
             if len(closes) < slow + 2:
                 return f"Historique insuffisant pour {symbol}."
-            
+
             def sma(arr, w):
                 out = []
                 acc = 0.0
@@ -874,6 +959,7 @@ class AIAgent:
                     if i >= w - 1:
                         out.append(acc / w)
                 return out
+
             sma_fast = sma(closes, fast)
             sma_slow = sma(closes, slow)
             # Align ends
@@ -898,7 +984,10 @@ class AIAgent:
         if not self.api_manager:
             return "Données de marché indisponibles."
         try:
-            data = self.api_manager.get_time_series(symbol, interval='1day', outputsize='compact') or {}
+            data = (
+                self.api_manager.get_time_series(symbol, interval='1day', outputsize='compact')
+                or {}
+            )
             series = None
             for k, v in data.items():
                 if 'time series' in k.lower():
@@ -917,7 +1006,7 @@ class AIAgent:
             if len(closes) < slow + 2:
                 return f"Historique insuffisant pour {symbol}."
             # Compute SMA arrays
-            
+
             def sma(arr, w):
                 out = []
                 acc = 0.0
@@ -928,6 +1017,7 @@ class AIAgent:
                     if i >= w - 1:
                         out.append(acc / w)
                 return out
+
             sma_fast = sma(closes, fast)
             sma_slow = sma(closes, slow)
             # Build positions: 1 if fast>slow else 0; use next-day open/close proxy with close-to-close trading
@@ -944,34 +1034,35 @@ class AIAgent:
             # Daily returns
             rets = [0.0]
             for i in range(1, len(closes)):
-                if closes[i-1] <= 0:
+                if closes[i - 1] <= 0:
                     rets.append(0.0)
                 else:
-                    rets.append((closes[i] / closes[i-1]) - 1.0)
+                    rets.append((closes[i] / closes[i - 1]) - 1.0)
             strat_rets = [p * r for p, r in zip(pos, rets)]
             # Equity curves
-            
+
             def cum_return(rs):
                 acc = 1.0
                 for r in rs:
-                    acc *= (1.0 + r)
+                    acc *= 1.0 + r
                 return (acc - 1.0) * 100.0
+
             bh_ret = cum_return(rets)
             strat_ret = cum_return(strat_rets)
             # CAGR approximation (assume ~252 trading days/year)
             years = max(1e-9, len(rets) / 252.0)
-            cagr = (1.0 + strat_ret/100.0) ** (1.0/years) - 1.0
+            cagr = (1.0 + strat_ret / 100.0) ** (1.0 / years) - 1.0
             # Max drawdown of strategy
             eq = []
             acc = 1.0
             for r in strat_rets:
-                acc *= (1.0 + r)
+                acc *= 1.0 + r
                 eq.append(acc)
             peak = 1.0
             max_dd = 0.0
             for v in eq:
                 peak = max(peak, v)
-                dd = (v/peak - 1.0) * 100.0
+                dd = (v / peak - 1.0) * 100.0
                 if dd < max_dd:
                     max_dd = dd
             last_sig = self._sma_signal(symbol, fast=fast, slow=slow)
@@ -1005,15 +1096,15 @@ class AIAgent:
             self._tech_cache[symbol] = (now, res)
         return res
 
-    def _build_recommendations(self, code: str, meta: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_recommendations(self, code: str, meta: dict[str, Any]) -> dict[str, Any]:
         """Construit des recommandations indicatives (quantité, raison, SL/TP, horizon).
         Ceci n'est pas un conseil d'investissement. Heuristiques simples.
         """
         total = sum(p.value for p in self.last_positions) or 0.0
         cash_total = sum(p.value for p in self.last_positions if p.symbol in ('CAD', 'USD'))
-        out: Dict[str, Any] = {}
+        out: dict[str, Any] = {}
 
-        def clamp_qty(desired_abs: float, max_pct: float = 0.05) -> Tuple[float, float]:
+        def clamp_qty(desired_abs: float, max_pct: float = 0.05) -> tuple[float, float]:
             if total <= 0:
                 return (0.0, 0.0)
             cap_abs = total * max_pct
@@ -1023,7 +1114,7 @@ class AIAgent:
         code_u = (code or '').upper()
         sym = (meta or {}).get('symbol')
 
-        def pos_of(symbol: Optional[str]) -> Optional[Position]:
+        def pos_of(symbol: str | None) -> Position | None:
             if not symbol:
                 return None
             for p in self.last_positions:
@@ -1034,57 +1125,65 @@ class AIAgent:
         if code_u == 'TECH_BUY':
             desired = cash_total * 0.25  # 25% du cash disponible
             qty_abs, qty_pct = clamp_qty(desired, max_pct=0.05)  # cap à 5% du PF
-            out.update({
-                'qty_abs': qty_abs,
-                'qty_pct': qty_pct,
-                'reason': 'Croisement haussier SMA(5) > SMA(20).',
-                'forecast': 'Poursuite haussière si volumes confirment.',
-                'horizon': '1 à 4 semaines',
-                'stop_loss': 'Sous SMA20 ou ~-5% du prix d’entrée',
-                'take_profit': '~+8 à +12% ou résistance récente',
-            })
+            out.update(
+                {
+                    'qty_abs': qty_abs,
+                    'qty_pct': qty_pct,
+                    'reason': 'Croisement haussier SMA(5) > SMA(20).',
+                    'forecast': 'Poursuite haussière si volumes confirment.',
+                    'horizon': '1 à 4 semaines',
+                    'stop_loss': 'Sous SMA20 ou ~-5% du prix d’entrée',
+                    'take_profit': '~+8 à +12% ou résistance récente',
+                }
+            )
         elif code_u == 'TECH_SELL':
             p = pos_of(sym)
             val = p.value if p else 0.0
             qty_abs = val * 0.5  # alléger ~50%
             qty_pct = (qty_abs / total) * 100.0 if total > 0 else None
-            out.update({
-                'qty_abs': qty_abs if total > 0 else None,
-                'qty_pct': qty_pct,
-                'reason': 'Croisement baissier SMA(5) < SMA(20).',
-                'forecast': 'Risque de correction court terme.',
-                'horizon': '1 à 4 semaines',
-                'stop_loss': 'Si maintien: stop serré au-dessus de SMA20 (~+3%)',
-                'take_profit': '—',
-            })
+            out.update(
+                {
+                    'qty_abs': qty_abs if total > 0 else None,
+                    'qty_pct': qty_pct,
+                    'reason': 'Croisement baissier SMA(5) < SMA(20).',
+                    'forecast': 'Risque de correction court terme.',
+                    'horizon': '1 à 4 semaines',
+                    'stop_loss': 'Si maintien: stop serré au-dessus de SMA20 (~+3%)',
+                    'take_profit': '—',
+                }
+            )
         elif code_u == 'PNL_RUN':
             p = pos_of(meta.get('symbol'))
             val = p.value if p else 0.0
             qty_abs = val * 0.25
             qty_pct = (qty_abs / total) * 100.0 if total > 0 else None
-            out.update({
-                'qty_abs': qty_abs if total > 0 else None,
-                'qty_pct': qty_pct,
-                'reason': 'Gain marqué atteint.',
-                'forecast': 'Consolidation possible après rallye.',
-                'horizon': 'Jours à semaines',
-                'stop_loss': 'Stop suiveur sous plus bas 10 jours ou ~-5%.',
-                'take_profit': 'Prise partielle +10 à +20% cumulée.',
-            })
+            out.update(
+                {
+                    'qty_abs': qty_abs if total > 0 else None,
+                    'qty_pct': qty_pct,
+                    'reason': 'Gain marqué atteint.',
+                    'forecast': 'Consolidation possible après rallye.',
+                    'horizon': 'Jours à semaines',
+                    'stop_loss': 'Stop suiveur sous plus bas 10 jours ou ~-5%.',
+                    'take_profit': 'Prise partielle +10 à +20% cumulée.',
+                }
+            )
         elif code_u in {'PNL_DOWN', 'PNL_DROP'}:
             p = pos_of(meta.get('symbol'))
             val = p.value if p else 0.0
             qty_abs = val * (0.25 if code_u == 'PNL_DOWN' else 0.4)
             qty_pct = (qty_abs / total) * 100.0 if total > 0 else None
-            out.update({
-                'qty_abs': qty_abs if total > 0 else None,
-                'qty_pct': qty_pct,
-                'reason': 'Baisse notable du PnL.',
-                'forecast': 'Poursuite baissière si supports cèdent.',
-                'horizon': 'Jours à semaines',
-                'stop_loss': f"Stop à ~{- self.pnl_warn_pct if code_u == 'PNL_DOWN' else - self.pnl_alert_pct:.0f}% du prix",
-                'take_profit': '—',
-            })
+            out.update(
+                {
+                    'qty_abs': qty_abs if total > 0 else None,
+                    'qty_pct': qty_pct,
+                    'reason': 'Baisse notable du PnL.',
+                    'forecast': 'Poursuite baissière si supports cèdent.',
+                    'horizon': 'Jours à semaines',
+                    'stop_loss': f"Stop à ~{- self.pnl_warn_pct if code_u == 'PNL_DOWN' else - self.pnl_alert_pct:.0f}% du prix",
+                    'take_profit': '—',
+                }
+            )
         elif code_u == 'CONCENTRATION':
             share = float(meta.get('share') or 0.0)
             p = pos_of(meta.get('symbol'))
@@ -1093,68 +1192,80 @@ class AIAgent:
                 target = 0.20
                 if share > target:
                     delta = (share - target) * total
-            out.update({
-                'qty_abs': delta if delta > 0 else None,
-                'qty_pct': (delta / total) * 100.0 if delta > 0 and total > 0 else None,
-                'reason': 'Poids de position au-dessus d’un seuil prudent.',
-                'forecast': 'Risque idiosyncratique accru.',
-                'horizon': 'Structurel',
-                'stop_loss': '—',
-                'take_profit': 'Allègement progressif vers 20% du PF.',
-            })
+            out.update(
+                {
+                    'qty_abs': delta if delta > 0 else None,
+                    'qty_pct': (delta / total) * 100.0 if delta > 0 and total > 0 else None,
+                    'reason': 'Poids de position au-dessus d’un seuil prudent.',
+                    'forecast': 'Risque idiosyncratique accru.',
+                    'horizon': 'Structurel',
+                    'stop_loss': '—',
+                    'take_profit': 'Allègement progressif vers 20% du PF.',
+                }
+            )
         elif code_u == 'CASH_HIGH':
             deploy = max(0.0, cash_total - total * 0.50)
             qty_abs, qty_pct = clamp_qty(deploy, max_pct=0.10)
-            out.update({
-                'qty_abs': qty_abs,
-                'qty_pct': qty_pct,
-                'reason': 'Trésorerie surdimensionnée.',
-                'forecast': 'Déploiement graduel pour réduire le cash drag.',
-                'horizon': 'Semaines à mois',
-                'stop_loss': '—',
-                'take_profit': '—',
-            })
+            out.update(
+                {
+                    'qty_abs': qty_abs,
+                    'qty_pct': qty_pct,
+                    'reason': 'Trésorerie surdimensionnée.',
+                    'forecast': 'Déploiement graduel pour réduire le cash drag.',
+                    'horizon': 'Semaines à mois',
+                    'stop_loss': '—',
+                    'take_profit': '—',
+                }
+            )
         elif code_u == 'CASH_LOW':
-            out.update({
-                'qty_abs': None,
-                'qty_pct': None,
-                'reason': 'Marge de manœuvre réduite (cash faible).',
-                'forecast': 'Limiter nouvelles entrées; privilégier la flexibilité.',
-                'horizon': 'Court terme',
-                'stop_loss': 'Prioriser stops plus serrés (~-3 à -5%).',
-                'take_profit': '—',
-            })
+            out.update(
+                {
+                    'qty_abs': None,
+                    'qty_pct': None,
+                    'reason': 'Marge de manœuvre réduite (cash faible).',
+                    'forecast': 'Limiter nouvelles entrées; privilégier la flexibilité.',
+                    'horizon': 'Court terme',
+                    'stop_loss': 'Prioriser stops plus serrés (~-3 à -5%).',
+                    'take_profit': '—',
+                }
+            )
         elif code_u == 'LOW_DIVERSIFICATION':
-            out.update({
-                'qty_abs': None,
-                'qty_pct': None,
-                'reason': 'Diversification faible (HHI élevé).',
-                'forecast': 'Risque de volatilité spécifique.',
-                'horizon': 'Structurel',
-                'stop_loss': '—',
-                'take_profit': '—',
-            })
+            out.update(
+                {
+                    'qty_abs': None,
+                    'qty_pct': None,
+                    'reason': 'Diversification faible (HHI élevé).',
+                    'forecast': 'Risque de volatilité spécifique.',
+                    'horizon': 'Structurel',
+                    'stop_loss': '—',
+                    'take_profit': '—',
+                }
+            )
         return out
 
-    def _chat_ollama(self, user_prompt: str) -> Optional[str]:
+    def _chat_ollama(self, user_prompt: str) -> str | None:
         """Query local Ollama model. Returns None if failure (so caller can fallback)."""
         if not self._ollama_available and not self._ensure_ollama_available():
             return None
         try:
-            if not HAS_REQUESTS:
-                return None
-            payload: Dict[str, Any] = {
+            payload: dict[str, Any] = {
                 "model": self._ollama_model,
                 "prompt": user_prompt,
                 "stream": False,
                 # Could add: temperature, top_p, etc.
             }
-            r = requests.post(
-                f"{self._ollama_endpoint}/api/generate",
-                data=json.dumps(payload),
-                headers={"Content-Type": "application/json"},
-                timeout=45,
-            )
+            url = f"{self._ollama_endpoint}/api/generate"
+            if self._http_ollama_slow is not None:
+                r = self._http_ollama_slow.post(url, json=payload)
+            elif HAS_REQUESTS:
+                r = requests.post(
+                    url,
+                    data=json.dumps(payload),
+                    headers={"Content-Type": "application/json"},
+                    timeout=45,
+                )
+            else:
+                return None
             if r.status_code != 200:
                 return f"(Ollama erreur HTTP {r.status_code})"
             data = r.json()
@@ -1177,7 +1288,7 @@ class AIAgent:
             'PNL_RUN': "Gain significatif - penser à sécuriser une partie (take profit partiel).",
             'CASH_LOW': "Trésorerie très basse - peu de marge pour saisir de nouvelles opportunités.",
             'CASH_HIGH': "Beaucoup de cash - capital oisif, évaluer allocation graduelle.",
-            'LOW_DIVERSIFICATION': "Nombre de positions / répartition insuffisante - augmenter diversification graduelle."
+            'LOW_DIVERSIFICATION': "Nombre de positions / répartition insuffisante - augmenter diversification graduelle.",
         }
         if code in explanations and explanations[code] not in message:
             message = f"{message} | {explanations[code]}"
@@ -1276,9 +1387,7 @@ class AIAgent:
                     **meta,
                 )
         # Cash ratio
-        cash_total = sum(
-            p.value for p in self.last_positions if p.symbol in ('CAD', 'USD')
-        )
+        cash_total = sum(p.value for p in self.last_positions if p.symbol in ('CAD', 'USD'))
         cash_ratio = cash_total / total
         if cash_ratio < 0.02:
             self._emit(
@@ -1309,8 +1418,13 @@ class AIAgent:
                 top_share=m.get('top_share'),
                 n_positions=m.get('n_positions'),
             )
+
         # Technical BUY/SELL alerts (rate-limited) for top holdings
-        top_non_cash = [p for p in sorted(self.last_positions, key=lambda x: x.value, reverse=True) if p.symbol not in ('CAD', 'USD')][:5]
+        top_non_cash = [
+            p
+            for p in sorted(self.last_positions, key=lambda x: x.value, reverse=True)
+            if p.symbol not in ('CAD', 'USD')
+        ][:5]
         now_ts = time.time()
         for p in top_non_cash:
             last_emit = self._last_tech_emit.get(p.symbol, 0)
@@ -1377,6 +1491,12 @@ class AIAgent:
                     }
                     for p in self.last_positions
                 ]
+                # Attempt to include advisor memory context (implicit via EnhancedAI.memory)
+                try:
+                    for r, t in self._advisor_memory[-6:]:
+                        self._enhanced_ai.memory.add(r, t)  # type: ignore[attr-defined]
+                except Exception:
+                    pass
                 res = self._enhanced_ai.analyze_and_suggest(positions, lang='fr')
                 if isinstance(res, dict):
                     a = (res.get('analytics') or '').strip()
@@ -1397,12 +1517,15 @@ class AIAgent:
                     return f"{label}: n/a"
                 items = [f"{x.get('symbol')} {x.get('change_pct', 0):+.1f}%" for x in lst[:5]]
                 return f"{label}: " + ", ".join(items)
-            return "\n".join([
-                fmt(data.get('gainers') or [], 'Gagnants'),
-                fmt(data.get('losers') or [], 'Perdants'),
-                fmt(data.get('actives') or [], 'Actifs'),
-                fmt(data.get('opportunities') or [], 'Opportunités'),
-            ])
+
+            return "\n".join(
+                [
+                    fmt(data.get('gainers') or [], 'Gagnants'),
+                    fmt(data.get('losers') or [], 'Perdants'),
+                    fmt(data.get('actives') or [], 'Actifs'),
+                    fmt(data.get('opportunities') or [], 'Opportunités'),
+                ]
+            )
         except Exception as e:
             return f"(movers) {e}"
 
@@ -1470,9 +1593,7 @@ class AIAgent:
             return "Aucune position."
         total = sum(p.value for p in self.last_positions) or 1.0
         lines = []
-        for p in sorted(
-            self.last_positions, key=lambda x: x.value, reverse=True
-        )[:10]:
+        for p in sorted(self.last_positions, key=lambda x: x.value, reverse=True)[:10]:
             share = p.value / total * 100
             lines.append(f"{p.symbol:<8} {share:5.1f}% {p.value:>12,.2f}")
         m = self._last_metrics or self._compute_metrics()
@@ -1505,8 +1626,14 @@ class AIAgent:
                     break
 
             if portfolio_pos:
-                pnl_str = f" ({portfolio_pos.pnl_pct:.1f}%)" if (portfolio_pos.pnl_pct is not None) else ""
-                result_lines.append(f"📈 Position: {portfolio_pos.value:,.2f} {portfolio_pos.currency or 'CAD'}{pnl_str}")
+                pnl_str = (
+                    f" ({portfolio_pos.pnl_pct:.1f}%)"
+                    if (portfolio_pos.pnl_pct is not None)
+                    else ""
+                )
+                result_lines.append(
+                    f"📈 Position: {portfolio_pos.value:,.2f} {portfolio_pos.currency or 'CAD'}{pnl_str}"
+                )
 
             # Market quote
             quote = enhanced.get('quote')
@@ -1521,7 +1648,11 @@ class AIAgent:
             if news:
                 result_lines.append("📰 Actualités récentes:")
                 for article in news[:2]:
-                    title = article.get('title', '')[:50] + '...' if len(article.get('title', '')) > 50 else article.get('title', '')
+                    title = (
+                        article.get('title', '')[:50] + '...'
+                        if len(article.get('title', '')) > 50
+                        else article.get('title', '')
+                    )
                     result_lines.append(f"  • {title}")
 
             # Technical indicator (RSI)
@@ -1540,17 +1671,19 @@ class AIAgent:
             return f"Erreur lors de la récupération des données pour {symbol}: {e}"
 
     # Convenience for UI/tests: return last N signals as dicts
-    def get_signals_dict(self, max_n: int = 50) -> List[Dict[str, Any]]:
+    def get_signals_dict(self, max_n: int = 50) -> list[dict[str, Any]]:
         sigs = self.get_signals()[-max_n:]
-        out: List[Dict[str, Any]] = []
+        out: list[dict[str, Any]] = []
         for s in sigs:
-            out.append({
-                'ts': s.ts,
-                'level': s.level,
-                'code': s.code,
-                'message': s.message,
-                'meta': s.meta,
-            })
+            out.append(
+                {
+                    'ts': s.ts,
+                    'level': s.level,
+                    'code': s.code,
+                    'message': s.message,
+                    'meta': s.meta,
+                }
+            )
         return out
 
 

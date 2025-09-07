@@ -1,10 +1,10 @@
 from __future__ import annotations
-import threading
-from datetime import datetime
+
 import json
+import threading
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
-from typing import Dict
+from datetime import datetime
+from tkinter import filedialog, messagebox, ttk
 
 
 class DiagnosticsPanel:
@@ -23,7 +23,9 @@ class DiagnosticsPanel:
         bar = ttk.Frame(tab)
         bar.pack(fill=tk.X, padx=4, pady=4)
         ttk.Button(bar, text='Actualiser stats', command=self.refresh).pack(side=tk.LEFT)
-        ttk.Button(bar, text='Nettoyage cache', command=self.housekeeping_now).pack(side=tk.LEFT, padx=6)
+        ttk.Button(bar, text='Nettoyage cache', command=self.housekeeping_now).pack(
+            side=tk.LEFT, padx=6
+        )
         ttk.Button(bar, text='Exporter JSON', command=self.export_json).pack(side=tk.LEFT)
 
         self.text = tk.Text(tab, height=14, wrap='word')
@@ -38,9 +40,9 @@ class DiagnosticsPanel:
             pass
 
     # ------------------- Actions -------------------
-    def _snapshot(self) -> Dict:
+    def _snapshot(self) -> dict:
         am = getattr(self.app, 'api_manager', None)
-        snap: Dict[str, object] = {
+        snap: dict[str, object] = {
             'timestamp': datetime.utcnow().isoformat() + 'Z',
         }
         try:
@@ -78,9 +80,13 @@ class DiagnosticsPanel:
         def worker():
             try:
                 self.app.api_manager.run_cache_housekeeping_once()
-                self.app.after(0, lambda: (self.app.set_status('Nettoyage cache terminé'), self.refresh()))
+                self.app.after(
+                    0, lambda: (self.app.set_status('Nettoyage cache terminé'), self.refresh())
+                )
             except Exception as e:
-                self.app.after(0, lambda e=e: self.app.set_status(f"Erreur nettoyage cache: {e}", error=True))
+                self.app.after(
+                    0, lambda e=e: self.app.set_status(f"Erreur nettoyage cache: {e}", error=True)
+                )
 
         threading.Thread(target=worker, daemon=True).start()
 

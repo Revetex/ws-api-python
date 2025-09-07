@@ -1,13 +1,20 @@
-from datetime import datetime, timedelta
-
 import re
-import requests
 import uuid
-from typing import Optional, Callable, Any
-
-from ws_api.exceptions import CurlException, LoginFailedException, ManualLoginRequired, OTPRequiredException, UnexpectedException, WSApiException  # noqa: E501
-from ws_api.session import WSAPISession
+from datetime import datetime, timedelta
 from inspect import signature
+from typing import Any, Callable, Optional
+
+import requests
+
+from ws_api.exceptions import (  # noqa: E501
+    CurlException,
+    LoginFailedException,
+    ManualLoginRequired,
+    OTPRequiredException,
+    UnexpectedException,
+    WSApiException,
+)
+from ws_api.session import WSAPISession
 
 
 class WealthsimpleAPIBase:
@@ -45,7 +52,12 @@ class WealthsimpleAPIBase:
         return str(uuid.uuid4())
 
     def send_http_request(
-        self, url: str, method: str = 'POST', data: Optional[dict] = None, headers: Optional[dict] = None, return_headers: bool = False
+        self,
+        url: str,
+        method: str = 'POST',
+        data: Optional[dict] = None,
+        headers: Optional[dict] = None,
+        return_headers: bool = False,
     ) -> Any:
         headers = headers or {}
         if method == 'POST':
@@ -75,11 +87,17 @@ class WealthsimpleAPIBase:
         except requests.exceptions.RequestException as e:
             raise CurlException(f"HTTP request failed: {e}")
 
-    def send_get(self, url: str, headers: Optional[dict] = None, return_headers: bool = False) -> Any:
+    def send_get(
+        self, url: str, headers: Optional[dict] = None, return_headers: bool = False
+    ) -> Any:
         return self.send_http_request(url, 'GET', headers=headers, return_headers=return_headers)
 
-    def send_post(self, url: str, data: dict, headers: Optional[dict] = None, return_headers: bool = False) -> Any:
-        return self.send_http_request(url, 'POST', data=data, headers=headers, return_headers=return_headers)
+    def send_post(
+        self, url: str, data: dict, headers: Optional[dict] = None, return_headers: bool = False
+    ) -> Any:
+        return self.send_http_request(
+            url, 'POST', data=data, headers=headers, return_headers=return_headers
+        )
 
     def start_session(self, sess: WSAPISession = None):
         if sess:
@@ -129,7 +147,11 @@ class WealthsimpleAPIBase:
         if not self.session.session_id:
             self.session.session_id = str(uuid.uuid4())
 
-    def check_oauth_token(self, persist_session_fct: Optional[Callable[[WSAPISession, Optional[str]], None]] = None, username=None):
+    def check_oauth_token(
+        self,
+        persist_session_fct: Optional[Callable[[WSAPISession, Optional[str]], None]] = None,
+        username=None,
+    ):
         if self.session.access_token:
             try:
                 # noinspection PyUnresolvedReferences
@@ -148,25 +170,49 @@ class WealthsimpleAPIBase:
             }
             headers = {
                 'x-wealthsimple-client': '@wealthsimple/wealthsimple',
-                'x-ws-profile': 'invest'
+                'x-ws-profile': 'invest',
             }
             response = self.send_post(f"{self.OAUTH_BASE_URL}/token", data, headers)
-            self.session.access_token = response['access_token']
-            self.session.refresh_token = response['refresh_token']
-            if persist_session_fct:
-                if len(signature(persist_session_fct).parameters) == 3:
-                    persist_session_fct(self.session.to_json(), username)
-                else:
-                    persist_session_fct(self.session.to_json())
-            return
+            # Defensive: ensure dict response
+            if not isinstance(response, dict):
+                raise ManualLoginRequired("OAuth refresh failed: unexpected response type")
+
+            # If the refresh failed (e.g., invalid_grant), force manual login
+            if 'error' in response:
+                raise ManualLoginRequired(
+                    f"OAuth refresh failed: {response.get('error_description') or response.get('error')}"
+                )
+
+            # Extract tokens safely
+            new_access = response.get('access_token')
+            new_refresh = response.get('refresh_token')
+            if new_access:
+                self.session.access_token = new_access
+                if new_refresh:
+                    self.session.refresh_token = new_refresh
+                if persist_session_fct:
+                    if len(signature(persist_session_fct).parameters) == 3:
+                        persist_session_fct(self.session.to_json(), username)
+                    else:
+                        persist_session_fct(self.session.to_json())
+                return
+
+            # Unexpected shape; do not crash with KeyError
+            raise ManualLoginRequired("OAuth refresh failed: missing access_token in response")
 
         raise ManualLoginRequired("OAuth token invalid and cannot be refreshed.")
 
     SCOPE_READ_ONLY = 'invest.read trade.read tax.read'
     SCOPE_READ_WRITE = 'invest.read trade.read tax.read invest.write trade.write tax.write'
 
-    def login_internal(self, username: str, password: str, otp_answer: str = None,
-                       persist_session_fct: callable = None, scope: str = SCOPE_READ_ONLY) -> WSAPISession:
+    def login_internal(
+        self,
+        username: str,
+        password: str,
+        otp_answer: str = None,
+        persist_session_fct: callable = None,
+        scope: str = SCOPE_READ_ONLY,
+    ) -> WSAPISession:
         data = {
             'grant_type': 'password',
             'username': username,
@@ -179,7 +225,7 @@ class WealthsimpleAPIBase:
 
         headers = {
             'x-wealthsimple-client': '@wealthsimple/wealthsimple',
-            'x-ws-profile': 'undefined'
+            'x-ws-profile': 'undefined',
         }
 
         if otp_answer:
@@ -187,12 +233,14 @@ class WealthsimpleAPIBase:
 
         # Send the POST request for token
         response_data = self.send_post(
-            url=f"{self.OAUTH_BASE_URL}/token",
-            data=data,
-            headers=headers
+            url=f"{self.OAUTH_BASE_URL}/token", data=data, headers=headers
         )
 
-        if 'error' in response_data and response_data['error'] == "invalid_grant" and otp_answer is None:
+        if (
+            'error' in response_data
+            and response_data['error'] == "invalid_grant"
+            and otp_answer is None
+        ):
             raise OTPRequiredException("2FA code required")
 
         if 'error' in response_data:
@@ -211,8 +259,15 @@ class WealthsimpleAPIBase:
 
         return self.session
 
-    def do_graphql_query(self, query_name: str, variables: dict, data_response_path: str, expect_type: str,
-                         filter_fn: callable = None, load_all_pages: bool = False):
+    def do_graphql_query(
+        self,
+        query_name: str,
+        variables: dict,
+        data_response_path: str,
+        expect_type: str,
+        filter_fn: callable = None,
+        load_all_pages: bool = False,
+    ):
         query = {
             'operationName': query_name,
             'query': self.GRAPHQL_QUERIES[query_name],
@@ -226,11 +281,7 @@ class WealthsimpleAPIBase:
             "x-platform-os": "web",
         }
 
-        response_data = self.send_post(
-            url=self.GRAPHQL_URL,
-            data=query,
-            headers=headers
-        )
+        response_data = self.send_post(url=self.GRAPHQL_URL, data=query, headers=headers)
 
         if 'data' not in response_data:
             raise WSApiException(f"GraphQL query failed: {query_name}", response_data)
@@ -244,12 +295,17 @@ class WealthsimpleAPIBase:
             if not data or key not in data:
                 raise WSApiException(f"GraphQL query failed: {query_name}", response_data)
             data = data[key]
-            if hasattr(data, 'pageInfo') and hasattr(data.pageInfo, 'hasNextPage') and data.pageInfo.hasNextPage:
+            if (
+                hasattr(data, 'pageInfo')
+                and hasattr(data.pageInfo, 'hasNextPage')
+                and data.pageInfo.hasNextPage
+            ):
                 end_cursor = data.pageInfo.endCursor
 
         # Ensure the data type matches the expected one (either array or object)
         if (expect_type == 'array' and not isinstance(data, list)) or (
-                expect_type == 'object' and not isinstance(data, dict)):
+            expect_type == 'object' and not isinstance(data, dict)
+        ):
             raise WSApiException(f"GraphQL query failed: {query_name}", response_data)
 
         # noinspection PyUnboundLocalVariable
@@ -261,25 +317,33 @@ class WealthsimpleAPIBase:
 
         if load_all_pages:
             if expect_type != 'array':
-                raise UnexpectedException("Can't load all pages for GraphQL queries that do not return arrays")
+                raise UnexpectedException(
+                    "Can't load all pages for GraphQL queries that do not return arrays"
+                )
             if end_cursor:
                 variables['cursor'] = end_cursor
-                more_data = self.do_graphql_query(query_name, variables, data_response_path, expect_type, filter, True)
+                more_data = self.do_graphql_query(
+                    query_name, variables, data_response_path, expect_type, filter, True
+                )
                 data += more_data
 
         return data
 
     def get_token_info(self):
         if not self.session.token_info:
-            headers = {
-                'x-wealthsimple-client': '@wealthsimple/wealthsimple'
-            }
+            headers = {'x-wealthsimple-client': '@wealthsimple/wealthsimple'}
             response = self.send_get(self.OAUTH_BASE_URL + '/token/info', headers=headers)
             self.session.token_info = response
         return self.session.token_info
 
     @staticmethod
-    def login(username: str, password: str, otp_answer: str = None, persist_session_fct: callable = None, scope: str = SCOPE_READ_ONLY):
+    def login(
+        username: str,
+        password: str,
+        otp_answer: str = None,
+        persist_session_fct: callable = None,
+        scope: str = SCOPE_READ_ONLY,
+    ):
         ws = WealthsimpleAPI()
         return ws.login_internal(username, password, otp_answer, persist_session_fct, scope)
 
@@ -303,6 +367,7 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
         self._fx_cache = {}  # (base, quote) -> (timestamp, rate)
         self._cache_ttl_sec = 120
         self._symbol_map = {}  # security_id -> (symbol, name)
+        self._display_name = None  # cached user display name
 
     # -------------- Market data (with simple in-memory cache) --------------
     def get_security_market_data(
@@ -333,16 +398,14 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
         cached = self._fx_cache.get(key)
         if cached and (now - cached[0]) < self._cache_ttl_sec:
             return cached[1]
-    # Attempt to derive via market data (placeholder logic)
+        # Attempt to derive via market data (placeholder logic)
         # Wealthsimple may not expose direct FX; we default to None here.
         rate = None
         # Store placeholder (avoid repeated attempts)
         self._fx_cache[key] = (now, rate if rate is not None else 0.0)
         return rate
 
-    def convert_money(
-        self, amount: float, from_cur: str, to_cur: str = 'CAD'
-    ) -> Optional[float]:
+    def convert_money(self, amount: float, from_cur: str, to_cur: str = 'CAD') -> Optional[float]:
         rate = self.get_fx_rate(from_cur, to_cur)
         if rate is None:
             return None
@@ -351,18 +414,13 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
     def get_accounts(self, open_only=True, use_cache=True):
         cache_key = 'open' if open_only else 'all'
         if not use_cache or cache_key not in self.account_cache:
-            filter_fn = (
-                (lambda acc: acc.get('status') == 'open')
-                if open_only else None
-            )
+            filter_fn = (lambda acc: acc.get('status') == 'open') if open_only else None
 
             accounts = self.do_graphql_query(
                 'FetchAllAccountFinancials',
                 {
                     'pageSize': 25,
-                    'identityId': self.get_token_info().get(
-                        'identity_canonical_id'
-                    ),
+                    'identityId': self.get_token_info().get('identity_canonical_id'),
                 },
                 'identity.accounts.edges',
                 'array',
@@ -389,48 +447,28 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
             account['description'] = account['nickname']
         elif account['unifiedAccountType'] == 'CASH':
             account['description'] = (
-                "Cash: joint"
-                if account['accountOwnerConfiguration'] == 'MULTI_OWNER'
-                else "Cash"
+                "Cash: joint" if account['accountOwnerConfiguration'] == 'MULTI_OWNER' else "Cash"
             )
         elif account['unifiedAccountType'] == 'SELF_DIRECTED_RRSP':
-            account['description'] = (
-                f"RRSP: self-directed - {account['currency']}"
-            )
+            account['description'] = f"RRSP: self-directed - {account['currency']}"
         elif account['unifiedAccountType'] == 'MANAGED_RRSP':
             account['description'] = f"RRSP: managed - {account['currency']}"
         elif account['unifiedAccountType'] == 'SELF_DIRECTED_SPOUSAL_RRSP':
-            account['description'] = (
-                f"RRSP: self-directed spousal - {account['currency']}"
-            )
+            account['description'] = f"RRSP: self-directed spousal - {account['currency']}"
         elif account['unifiedAccountType'] == 'SELF_DIRECTED_TFSA':
-            account['description'] = (
-                f"TFSA: self-directed - {account['currency']}"
-            )
+            account['description'] = f"TFSA: self-directed - {account['currency']}"
         elif account['unifiedAccountType'] == 'MANAGED_TFSA':
             account['description'] = f"TFSA: managed - {account['currency']}"
-        elif (
-            account['unifiedAccountType']
-            == 'SELF_DIRECTED_JOINT_NON_REGISTERED'
-        ):
-            account['description'] = (
-                "Non-registered: self-directed - joint"
-            )
-        elif (
-            account['unifiedAccountType']
-            == 'SELF_DIRECTED_NON_REGISTERED_MARGIN'
-        ):
-            account['description'] = (
-                "Non-registered: self-directed margin"
-            )
+        elif account['unifiedAccountType'] == 'SELF_DIRECTED_JOINT_NON_REGISTERED':
+            account['description'] = "Non-registered: self-directed - joint"
+        elif account['unifiedAccountType'] == 'SELF_DIRECTED_NON_REGISTERED_MARGIN':
+            account['description'] = "Non-registered: self-directed margin"
         elif account['unifiedAccountType'] == 'MANAGED_JOINT':
             account['description'] = "Non-registered: managed - joint"
         elif account['unifiedAccountType'] == 'SELF_DIRECTED_CRYPTO':
             account['description'] = "Crypto"
         elif account['unifiedAccountType'] == 'SELF_DIRECTED_RRIF':
-            account['description'] = (
-                f"RRIF: self-directed - {account['currency']}"
-            )
+            account['description'] = f"RRIF: self-directed - {account['currency']}"
         # TODO: Add other types as needed
 
     def get_account_balances(self, account_id):
@@ -489,19 +527,21 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
                 # Handle cash pseudo securities
                 if security_id in ('sec-c-cad', 'sec-c-usd'):
                     currency = 'CAD' if security_id.endswith('cad') else 'USD'
-                    positions.append({
-                        'securityId': security_id,
-                        'symbol': currency,
-                        'name': f"Cash {currency}",
-                        'exchange': '',
-                        'quantity': qty,
-                        'lastPrice': 1.0,
-                        'value': qty,  # qty already float
-                        'currency': currency,
-                        'avgPrice': None,
-                        'pnlAbs': 0.0,
-                        'pnlPct': 0.0,
-                    })
+                    positions.append(
+                        {
+                            'securityId': security_id,
+                            'symbol': currency,
+                            'name': f"Cash {currency}",
+                            'exchange': '',
+                            'quantity': qty,
+                            'lastPrice': 1.0,
+                            'value': qty,  # qty already float
+                            'currency': currency,
+                            'avgPrice': None,
+                            'pnlAbs': 0.0,
+                            'pnlPct': 0.0,
+                        }
+                    )
                     continue
                 # Get symbol/exchange via existing helper
                 # Resolve symbol & name; may trigger a market data fetch
@@ -520,26 +560,17 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
                             stock = md['stock']
                             name = stock.get('name') or name
                             exchange = stock.get('primaryExchange') or ''
-                        if (
-                            md and md.get('quote')
-                            and md['quote'].get('last') is not None
-                        ):
+                        if md and md.get('quote') and md['quote'].get('last') is not None:
                             last_price = float(md['quote']['last'])
                             previous_close = md['quote'].get('previousClose')
                         if md and md.get('fundamentals'):
                             fund = md['fundamentals']
-                            currency_code = (
-                                fund.get('currency') or currency_code
-                            )
+                            currency_code = fund.get('currency') or currency_code
                             avg_price = (
-                                fund.get('averagePrice')
-                                or fund.get('avgPrice')
-                                or avg_price
+                                fund.get('averagePrice') or fund.get('avgPrice') or avg_price
                             )
                         if md and md.get('quote'):
-                            currency_code = (
-                                md['quote'].get('currency') or currency_code
-                            )
+                            currency_code = md['quote'].get('currency') or currency_code
                     except Exception:  # noqa
                         pass
                 value = (qty * last_price) if last_price is not None else None
@@ -569,29 +600,30 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
                             avg_price = prev_f  # expose as reference price
                     except Exception:  # noqa
                         pass
-                positions.append({
-                    'securityId': security_id,
-                    'symbol': symbol.split(':')[-1],  # drop exchange prefix
-                    'name': name,
-                    'exchange': exchange,
-                    'quantity': qty,
-                    'lastPrice': last_price,
-                    'currency': currency_code,
-                    'value': value,
-                    'avgPrice': avg_price,
-                    'pnlAbs': pnl_abs,
-                    'pnlPct': pnl_pct,
-                    'pnlIsDaily': avg_price is not None and pnl_pct is not None and 'previous_close' in locals() and previous_close == avg_price,
-                })
+                positions.append(
+                    {
+                        'securityId': security_id,
+                        'symbol': symbol.split(':')[-1],  # drop exchange prefix
+                        'name': name,
+                        'exchange': exchange,
+                        'quantity': qty,
+                        'lastPrice': last_price,
+                        'currency': currency_code,
+                        'value': value,
+                        'avgPrice': avg_price,
+                        'pnlAbs': pnl_abs,
+                        'pnlPct': pnl_pct,
+                        'pnlIsDaily': avg_price is not None
+                        and pnl_pct is not None
+                        and 'previous_close' in locals()
+                        and previous_close == avg_price,
+                    }
+                )
         # Ensure all values are numeric floats for sorting
         for p in positions:
             if not isinstance(p.get('value'), (int, float)):
                 try:
-                    p['value'] = (
-                        float(p['value'])
-                        if p.get('value') is not None
-                        else 0.0
-                    )
+                    p['value'] = float(p['value']) if p.get('value') is not None else 0.0
                 except Exception:  # noqa
                     p['value'] = 0.0
         # Sort by descending value then symbol
@@ -603,12 +635,81 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
         )
         return positions
 
+    # -------------- Profile helpers --------------
+    def get_identity_display_name(self) -> Optional[str]:
+        """Best-effort display name for the current identity.
+
+        Order of preference:
+        1) OAuth token_info fields (first_name/last_name/name/display_name)
+        2) First matching account owner whose identityId matches token_info
+        3) First account owner name found
+        Returns None if nothing resolvable.
+        """
+        # Cached value
+        if isinstance(self._display_name, str) and self._display_name.strip():
+            return self._display_name
+
+        # 1) From token info if present
+        name = None
+        try:
+            tok = self.get_token_info() or {}
+            # Common potential keys
+            first = tok.get('first_name') or tok.get('given_name')
+            last = tok.get('last_name') or tok.get('family_name')
+            display = tok.get('display_name') or tok.get('name') or tok.get('identity_name')
+            if display and str(display).strip():
+                name = str(display).strip()
+            elif first or last:
+                name = (
+                    ' '.join([str(first or '').strip(), str(last or '').strip()]).strip()
+                ) or None
+        except Exception:  # noqa
+            name = None
+
+        # 2) From accounts owners (prefer matching identity)
+        if not name:
+            try:
+                target_id = None
+                try:
+                    tok = self.get_token_info() or {}
+                    target_id = tok.get('identity_canonical_id')
+                except Exception:
+                    target_id = None
+                accts = self.get_accounts(use_cache=True)
+                owner_name = None
+                owner_name_match = None
+                for acc in accts or []:
+                    for owner in acc.get('accountOwners') or []:
+                        nm = (owner.get('name') or '').strip()
+                        if nm and not owner_name:
+                            owner_name = nm
+                        if target_id and owner.get('identityId') == target_id and nm:
+                            owner_name_match = nm
+                            break
+                    if owner_name_match:
+                        break
+                name = owner_name_match or owner_name or None
+            except Exception:  # noqa
+                name = None
+
+        if name and name.strip():
+            self._display_name = name.strip()
+        return self._display_name
+
     # -------------- Export helpers --------------
     def export_positions_csv(self, positions, path: str):
         import csv
+
         fields = [
-            'symbol', 'name', 'quantity', 'lastPrice', 'value', 'currency',
-            'avgPrice', 'pnlAbs', 'pnlPct'
+            'symbol',
+            'name',
+            'quantity',
+            'lastPrice',
+            'value',
+            'currency',
+            'avgPrice',
+            'pnlAbs',
+            'pnlPct',
         ]
         with open(path, 'w', newline='', encoding='utf-8') as f:
             w = csv.DictWriter(f, fieldnames=fields)
@@ -632,17 +733,11 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
             {
                 'id': account_id,
                 'currency': currency,
-                'startDate': (
-                    start_date.strftime('%Y-%m-%d')
-                    if start_date else None
-                ),
-                'endDate': (
-                    end_date.strftime('%Y-%m-%d')
-                    if end_date else None
-                ),
+                'startDate': (start_date.strftime('%Y-%m-%d') if start_date else None),
+                'endDate': (end_date.strftime('%Y-%m-%d') if end_date else None),
                 'resolution': resolution,
                 'first': first,
-                'cursor': cursor
+                'cursor': cursor,
             },
             'account.financials.historicalDaily.edges',
             'array',
@@ -660,18 +755,10 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
         return self.do_graphql_query(
             'FetchIdentityHistoricalFinancials',
             {
-                'identityId': self.get_token_info().get(
-                    'identity_canonical_id'
-                ),
+                'identityId': self.get_token_info().get('identity_canonical_id'),
                 'currency': currency,
-                'startDate': (
-                    start_date.strftime('%Y-%m-%d')
-                    if start_date else None
-                ),
-                'endDate': (
-                    end_date.strftime('%Y-%m-%d')
-                    if end_date else None
-                ),
+                'startDate': (start_date.strftime('%Y-%m-%d') if start_date else None),
+                'endDate': (end_date.strftime('%Y-%m-%d') if end_date else None),
                 'first': first,
                 'cursor': cursor,
                 'accountIds': account_ids or [],
@@ -693,25 +780,17 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
         end_date = (
             end_date
             if end_date
-            else datetime.now() + timedelta(
-                hours=23, minutes=59, seconds=59, milliseconds=999
-            )
+            else datetime.now() + timedelta(hours=23, minutes=59, seconds=59, milliseconds=999)
         )
 
         # Filter function to ignore rejected/cancelled activities
         def filter_fn(activity):
             act_type = (activity.get('type', '') or '').upper()
             status = (activity.get('status', '') or '').lower()
-            return (
-                act_type != 'LEGACY_TRANSFER'
-                and (
-                    not ignore_rejected
-                    or status == ''
-                    or (
-                        'rejected' not in status
-                        and 'cancelled' not in status
-                    )
-                )
+            return act_type != 'LEGACY_TRANSFER' and (
+                not ignore_rejected
+                or status == ''
+                or ('rejected' not in status and 'cancelled' not in status)
             )
 
         activities = self.do_graphql_query(
@@ -721,8 +800,7 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
                 'first': how_many,
                 'condition': {
                     'startDate': (
-                        start_date.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
-                        if start_date else None
+                        start_date.strftime('%Y-%m-%dT%H:%M:%S.%fZ') if start_date else None
                     ),
                     'endDate': end_date.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
                     'accountIds': [account_id],
@@ -743,25 +821,20 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
 
         if act['type'] == 'INTERNAL_TRANSFER':
             accounts = self.get_accounts(False)
-            matching = [
-                acc for acc in accounts
-                if acc['id'] == act['opposingAccountId']
-            ]
+            matching = [acc for acc in accounts if acc['id'] == act['opposingAccountId']]
             target_account = matching.pop() if matching else None
             account_description = (
                 f"{target_account['description']} ({target_account['number']})"
-                if target_account else
-                act['opposingAccountId']
+                if target_account
+                else act['opposingAccountId']
             )
             if act['subType'] == 'SOURCE':
                 act['description'] = (
-                    "Transfer out: Transfer to Wealthsimple "
-                    f"{account_description}"
+                    "Transfer out: Transfer to Wealthsimple " f"{account_description}"
                 )
             else:
                 act['description'] = (
-                    "Transfer in: Transfer from Wealthsimple "
-                    f"{account_description}"
+                    "Transfer in: Transfer from Wealthsimple " f"{account_description}"
                 )
 
         elif act['type'] in ['DIY_BUY', 'DIY_SELL']:
@@ -769,32 +842,24 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
             action = 'buy' if act['type'] == 'DIY_BUY' else 'sell'
             security = self.security_id_to_symbol(act['securityId'])
             if act['assetQuantity'] is None:
-                act['description'] = (
-                    f"{verb}: {action} TBD"
-                )
+                act['description'] = f"{verb}: {action} TBD"
             else:
-                price = (
-                    float(act['amount']) / float(act['assetQuantity'])
-                )
+                price = float(act['amount']) / float(act['assetQuantity'])
                 act['description'] = (
-                    f"{verb}: {action} {float(act['assetQuantity'])} x "
-                    f"{security} @ {price}"
+                    f"{verb}: {action} {float(act['assetQuantity'])} x " f"{security} @ {price}"
                 )
 
-        elif (
-            act['type'] in ['DEPOSIT', 'WITHDRAWAL']
-            and act['subType'] in ['E_TRANSFER', 'E_TRANSFER_FUNDING']
-        ):
+        elif act['type'] in ['DEPOSIT', 'WITHDRAWAL'] and act['subType'] in [
+            'E_TRANSFER',
+            'E_TRANSFER_FUNDING',
+        ]:
             direction = 'from' if act['type'] == 'DEPOSIT' else 'to'
             act['description'] = (
                 "Deposit: Interac e-transfer "
                 f"{direction} {act['eTransferName']} {act['eTransferEmail']}"
             )
 
-        elif (
-            act['type'] == 'DEPOSIT'
-            and act['subType'] == 'PAYMENT_CARD_TRANSACTION'
-        ):
+        elif act['type'] == 'DEPOSIT' and act['subType'] == 'PAYMENT_CARD_TRANSACTION':
             type_ = act['type'].lower().capitalize()
             act['description'] = f"{type_}: Debit card funding"
 
@@ -808,20 +873,13 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
             if not nickname:
                 nickname = bank_account['accountName']
             act['description'] = (
-                f"{type_}: EFT {direction} {nickname} "
-                f"{bank_account['accountNumber']}"
+                f"{type_}: EFT {direction} {nickname} " f"{bank_account['accountNumber']}"
             )
 
-        elif (
-            act['type'] == 'REFUND'
-            and act['subType'] == 'TRANSFER_FEE_REFUND'
-        ):
+        elif act['type'] == 'REFUND' and act['subType'] == 'TRANSFER_FEE_REFUND':
             act['description'] = "Reimbursement: account transfer fee"
 
-        elif (
-            act['type'] == 'INSTITUTIONAL_TRANSFER_INTENT'
-            and act['subType'] == 'TRANSFER_IN'
-        ):
+        elif act['type'] == 'INSTITUTIONAL_TRANSFER_INTENT' and act['subType'] == 'TRANSFER_IN':
             details = self.get_transfer_details(act['externalCanonicalId'])
             verb = details['transferType'].replace('_', '-').capitalize()
             act['description'] = (
@@ -843,9 +901,7 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
 
         elif act['type'] == 'FUNDS_CONVERSION':
             other = 'USD' if act['currency'] == 'CAD' else 'CAD'
-            act['description'] = (
-                f"Funds converted: {act['currency']} from {other}"
-            )
+            act['description'] = f"Funds converted: {act['currency']} from {other}"
 
         elif act['type'] == 'NON_RESIDENT_TAX':
             act['description'] = "Non-resident tax"
@@ -853,21 +909,12 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
         # Refs:
         #   https://www.payments.ca/payment-resources/iso-20022/automatic-funds-transfer
         #   https://www.payments.ca/compelling-new-evidence-strong-link-between-aft-and-canadas-cheque-decline
-    # 2nd ref: AFTs are direct credit/debit payments (direct deposit or PADs)
-        elif (
-            act['type'] in ('DEPOSIT', 'WITHDRAWAL')
-            and act['subType'] == 'AFT'
-        ):
-            type_ = (
-                'Direct deposit'
-                if act['type'] == 'DEPOSIT'
-                else 'Pre-authorized debit'
-            )
+        # 2nd ref: AFTs are direct credit/debit payments (direct deposit or PADs)
+        elif act['type'] in ('DEPOSIT', 'WITHDRAWAL') and act['subType'] == 'AFT':
+            type_ = 'Direct deposit' if act['type'] == 'DEPOSIT' else 'Pre-authorized debit'
             direction = 'from' if type_ == 'Direct deposit' else 'to'
             institution = (
-                act['aftOriginatorName']
-                if act['aftOriginatorName']
-                else act['externalCanonicalId']
+                act['aftOriginatorName'] if act['aftOriginatorName'] else act['externalCanonicalId']
             )
             act['description'] = f"{type_}: {direction} {institution}"
 
@@ -879,20 +926,12 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
             number = act['redactedExternalAccountNumber']
             act['description'] = f"{type_}: Bill pay {name} {number}"
 
-        elif (
-            act['type'] == 'P2P_PAYMENT'
-            and act['subType'] in ('SEND', 'SEND_RECEIVED')
-        ):
-            direction = (
-                'sent to' if act['subType'] == 'SEND' else 'received from'
-            )
-            p2pHandle = act['p2pHandle']
-            act['description'] = f"Cash {direction} {p2pHandle}"
+        elif act['type'] == 'P2P_PAYMENT' and act['subType'] in ('SEND', 'SEND_RECEIVED'):
+            direction = 'sent to' if act['subType'] == 'SEND' else 'received from'
+            p2p_handle = act['p2pHandle']
+            act['description'] = f"Cash {direction} {p2p_handle}"
 
-        elif (
-            act['type'] == 'PROMOTION'
-            and act['subType'] == 'INCENTIVE_BONUS'
-        ):
+        elif act['type'] == 'PROMOTION' and act['subType'] == 'INCENTIVE_BONUS':
             type_ = act['type'].capitalize()
             subtype = act['subType'].replace('_', ' ').capitalize()
             act['description'] = f"{type_}: {subtype}"
@@ -946,12 +985,8 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
         security_market_data_cache_getter: callable,
         security_market_data_cache_setter: callable,
     ):
-        self.security_market_data_cache_getter = (
-            security_market_data_cache_getter
-        )
-        self.security_market_data_cache_setter = (
-            security_market_data_cache_setter
-        )
+        self.security_market_data_cache_getter = security_market_data_cache_getter
+        self.security_market_data_cache_setter = security_market_data_cache_setter
 
     def search_security(self, query):
         # Fetch security search results using GraphQL query
@@ -973,3 +1008,19 @@ class WealthsimpleAPI(WealthsimpleAPIBase):
             'security.historicalQuotes',
             'array',
         )
+
+    # -------------- Trading helpers (read-only) --------------
+    def get_allowed_order_subtypes(self, security_id: str) -> list[str] | None:
+        """Return allowed order subtypes for a security if available.
+
+        Wealthsimple exposes this in the market data fragment. This is useful to map UI choices.
+        """
+        try:
+            md = self.get_security_market_data(security_id)
+            sub = md.get('allowedOrderSubtypes') if isinstance(md, dict) else None
+            # Normalize to list[str]
+            if isinstance(sub, list):
+                return [str(x) for x in sub]
+        except Exception:
+            pass
+        return None

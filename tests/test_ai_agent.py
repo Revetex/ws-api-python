@@ -36,9 +36,11 @@ def test_generate_signals_and_gating(monkeypatch):
     # Enable gate and emit another signal
     agent.notifications_allowed = lambda: True
     # Trigger a cash ratio signal by near zero cash
-    agent.on_positions([
-        {"symbol": "AAA", "name": "A", "quantity": 10, "value": 1000, "pnlPct": 0.0},
-    ])
+    agent.on_positions(
+        [
+            {"symbol": "AAA", "name": "A", "quantity": 10, "value": 1000, "pnlPct": 0.0},
+        ]
+    )
     assert dam.sent, "Expected notifications when gate is enabled"
 
 

@@ -1,18 +1,25 @@
 from __future__ import annotations
+
 import threading
 import tkinter as tk
 from tkinter import ttk
 
 try:
-    from analytics.strategies import MovingAverageCrossStrategy, RSIReversionStrategy, ConfluenceStrategy
     from analytics.backtest import run_signals_backtest
+    from analytics.strategies import (
+        ConfluenceStrategy,
+        MovingAverageCrossStrategy,
+        RSIReversionStrategy,
+    )
+
     HAS_ANALYTICS = True
 except Exception:  # pragma: no cover
     HAS_ANALYTICS = False
 
 try:
-    from matplotlib.figure import Figure
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+    from matplotlib.figure import Figure
+
     HAS_MPL = True
 except Exception:  # pragma: no cover
     HAS_MPL = False
@@ -88,24 +95,39 @@ class BacktestPanel:
         ttk.Label(prm, text='RSI Low:').pack(side=tk.LEFT, padx=(12, 2))
         ttk.Spinbox(prm, from_=5, to=45, width=4, textvariable=self.var_rsi_low).pack(side=tk.LEFT)
         ttk.Label(prm, text='RSI High:').pack(side=tk.LEFT, padx=(6, 2))
-        ttk.Spinbox(prm, from_=55, to=95, width=4, textvariable=self.var_rsi_high).pack(side=tk.LEFT)
+        ttk.Spinbox(prm, from_=55, to=95, width=4, textvariable=self.var_rsi_high).pack(
+            side=tk.LEFT
+        )
         ttk.Label(prm, text='RSI Period:').pack(side=tk.LEFT, padx=(12, 2))
-        ttk.Spinbox(prm, from_=5, to=50, width=4, textvariable=self.var_rsi_period).pack(side=tk.LEFT)
+        ttk.Spinbox(prm, from_=5, to=50, width=4, textvariable=self.var_rsi_period).pack(
+            side=tk.LEFT
+        )
         ttk.Label(prm, text='Cash:').pack(side=tk.LEFT, padx=(12, 2))
-        ttk.Spinbox(prm, from_=1000, to=1000000, increment=500, width=10, textvariable=self.var_cash).pack(side=tk.LEFT)
+        ttk.Spinbox(
+            prm, from_=1000, to=1000000, increment=500, width=10, textvariable=self.var_cash
+        ).pack(side=tk.LEFT)
         # Param row 2 - Volatility
         prm2 = ttk.Frame(tab)
         prm2.pack(fill=tk.X, padx=6)
         lbl_bw = ttk.Label(prm2, text='Min BBand BW:')
         lbl_bw.pack(side=tk.LEFT)
-        sp_bw = ttk.Spinbox(prm2, from_=0.0, to=1.0, increment=0.01, width=6, textvariable=self.var_min_bw)
+        sp_bw = ttk.Spinbox(
+            prm2, from_=0.0, to=1.0, increment=0.01, width=6, textvariable=self.var_min_bw
+        )
         sp_bw.pack(side=tk.LEFT)
         ttk.Label(prm2, text='BBand Window:').pack(side=tk.LEFT, padx=(6, 2))
         ttk.Spinbox(prm2, from_=10, to=60, width=5, textvariable=self.var_bb_win).pack(side=tk.LEFT)
         try:
             from .ui_utils import attach_tooltip
-            attach_tooltip(lbl_bw, 'Filtre de volatilité (Bollinger bandwidth). 0.00 = aucun filtre; 0.05–0.10 = faible vol; 0.10–0.20 = modérée; >0.20 = forte. Recommandé: 0.05–0.15 pour éviter le bruit.')
-            attach_tooltip(sp_bw, 'Valeur minimale du Bollinger bandwidth pour générer des signaux. Échelle 0–1. Ex.: 0.08 laisse passer des tendances, 0.15 filtre les ranges trop serrés.')
+
+            attach_tooltip(
+                lbl_bw,
+                'Filtre de volatilité (Bollinger bandwidth). 0.00 = aucun filtre; 0.05–0.10 = faible vol; 0.10–0.20 = modérée; >0.20 = forte. Recommandé: 0.05–0.15 pour éviter le bruit.',
+            )
+            attach_tooltip(
+                sp_bw,
+                'Valeur minimale du Bollinger bandwidth pour générer des signaux. Échelle 0–1. Ex.: 0.08 laisse passer des tendances, 0.15 filtre les ranges trop serrés.',
+            )
         except Exception:
             pass
         # Actions
@@ -199,7 +221,10 @@ class BacktestPanel:
 
         def worker():
             try:
-                ts = self.app.api_manager.get_time_series(sym, interval=interval, outputsize=out) or {}
+                ts = (
+                    self.app.api_manager.get_time_series(sym, interval=interval, outputsize=out)
+                    or {}
+                )
                 closes = self._extract_closes(ts)
                 if len(closes) < 20:
                     raise RuntimeError('Série insuffisante')
@@ -207,14 +232,26 @@ class BacktestPanel:
                 res = run_signals_backtest(closes, sigs, initial_cash=cash)
                 self.app.after(0, lambda r=res: self._render_result(r, sym))
             except Exception as e:
-                self.app.after(0, lambda e=e: (self.app.set_status(f"Backtest: {e}", error=True), self._set_status(f"Erreur: {e}", error=True)))
+                self.app.after(
+                    0,
+                    lambda e=e: (
+                        self.app.set_status(f"Backtest: {e}", error=True),
+                        self._set_status(f"Erreur: {e}", error=True),
+                    ),
+                )
 
         threading.Thread(target=worker, daemon=True).start()
 
     def _generate_signals(self, closes):
         kind = self.var_strategy.get()
         if kind == 'rsi_reversion':
-            return RSIReversionStrategy(int(self.var_rsi_period.get() or 14), int(self.var_rsi_low.get() or 30), int(self.var_rsi_high.get() or 70), float(self.var_min_bw.get() or 0.0), int(self.var_bb_win.get() or 20)).generate(closes)
+            return RSIReversionStrategy(
+                int(self.var_rsi_period.get() or 14),
+                int(self.var_rsi_low.get() or 30),
+                int(self.var_rsi_high.get() or 70),
+                float(self.var_min_bw.get() or 0.0),
+                int(self.var_bb_win.get() or 20),
+            ).generate(closes)
         if kind == 'confluence':
             fast = int(self.var_fast.get() or 10)
             slow = int(self.var_slow.get() or 30)
@@ -223,12 +260,22 @@ class BacktestPanel:
             # reuse rsi_low as sell threshold and rsi_high as buy threshold for UI simplicity
             rb = int(self.var_rsi_high.get() or 55)
             rs = int(self.var_rsi_low.get() or 45)
-            return ConfluenceStrategy(fast, slow, int(self.var_rsi_period.get() or 14), rb, rs, float(self.var_min_bw.get() or 0.0), int(self.var_bb_win.get() or 20)).generate(closes)
+            return ConfluenceStrategy(
+                fast,
+                slow,
+                int(self.var_rsi_period.get() or 14),
+                rb,
+                rs,
+                float(self.var_min_bw.get() or 0.0),
+                int(self.var_bb_win.get() or 20),
+            ).generate(closes)
         fast = int(self.var_fast.get() or 10)
         slow = int(self.var_slow.get() or 30)
         if fast >= slow:
             slow = max(fast + 1, 5)
-        return MovingAverageCrossStrategy(fast, slow, float(self.var_min_bw.get() or 0.0), int(self.var_bb_win.get() or 20)).generate(closes)
+        return MovingAverageCrossStrategy(
+            fast, slow, float(self.var_min_bw.get() or 0.0), int(self.var_bb_win.get() or 20)
+        ).generate(closes)
 
     def _render_result(self, res: dict, sym: str):
         self._set_status('Terminé')

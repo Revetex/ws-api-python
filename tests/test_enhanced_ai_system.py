@@ -1,4 +1,11 @@
-from enhanced_ai_system import Safety, DecisionEngine, Communicator, EnhancedAI, Decision, AnalyticsEngine
+from enhanced_ai_system import (
+    AnalyticsEngine,
+    Communicator,
+    Decision,
+    DecisionEngine,
+    EnhancedAI,
+    Safety,
+)
 
 
 def test_safety_mask_text_email_and_digits():
@@ -62,7 +69,12 @@ def test_decision_engine_sector_limit_holds_buy():
 def test_communicator_masks_without_blocking():
     s = Safety()
     c = Communicator(safety=s)
-    d = Decision(action="BUY", symbol="AAA", confidence=0.7, rationale="Ecrivez-moi: a@b.com, tel 2223334444555")
+    d = Decision(
+        action="BUY",
+        symbol="AAA",
+        confidence=0.7,
+        rationale="Ecrivez-moi: a@b.com, tel 2223334444555",
+    )
     txt = c.format_decision(d)
     assert "[email masqué]" in txt
     assert "[numéro masqué]55" in txt
@@ -81,7 +93,7 @@ def test_enhanced_ai_end_to_end():
     assert isinstance(res["analytics"], str) and len(res["analytics"]) > 0
     assert isinstance(res["decision"], str) and len(res["decision"]) > 0
 
-    
+
 def sample_positions():
     return [
         {"symbol": "AAPL", "value": 10000.0, "pnlAbs": 500.0, "pnlPct": 5.0},
@@ -132,6 +144,7 @@ def test_safety_moderation_and_rate_limit():
 
 def test_context_memory_summarize_edges():
     from enhanced_ai_system import ContextMemory
+
     mem = ContextMemory(max_items=6)
     # Empty
     assert mem.summarize().strip() == ""

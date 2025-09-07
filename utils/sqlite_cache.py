@@ -12,18 +12,20 @@ Design:
 - Thread-safe via a lock; SQLite connection uses WAL and check_same_thread=False.
 - Fail-soft: all methods catch exceptions and return None/False to avoid crashing callers.
 """
+
 from __future__ import annotations
-import os
+
 import json
+import os
 import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any
 
 
 class PersistentCache:
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: str | None = None):
         self.db_path = self._resolve_db_path(db_path)
         # Ensure directory exists
         try:
@@ -32,7 +34,9 @@ class PersistentCache:
             pass
         self._lock = threading.Lock()
         try:
-            self._conn = sqlite3.connect(self.db_path, timeout=5.0, isolation_level=None, check_same_thread=False)
+            self._conn = sqlite3.connect(
+                self.db_path, timeout=5.0, isolation_level=None, check_same_thread=False
+            )
             with self._conn:
                 self._conn.execute('PRAGMA journal_mode=WAL;')
                 self._conn.execute('PRAGMA synchronous=NORMAL;')
@@ -50,7 +54,7 @@ class PersistentCache:
             # If connection fails, set to None; methods will fail-soft
             self._conn = None
 
-    def _resolve_db_path(self, db_path: Optional[str]) -> str:
+    def _resolve_db_path(self, db_path: str | None) -> str:
         if db_path:
             return db_path
         env_path = os.getenv('WSAPP_CACHE_DB') or os.getenv('CACHE_DB_PATH')
@@ -63,13 +67,16 @@ class PersistentCache:
         except Exception:
             return 'cache.sqlite3'
 
-    def get_raw(self, namespace: str, key: str) -> Optional[Tuple[Any, float]]:
+    def get_raw(self, namespace: str, key: str) -> tuple[Any, float] | None:
         """Return (value_obj, updated_at_epoch) or None."""
         if not self._conn:
             return None
         try:
             with self._lock:
-                cur = self._conn.execute('SELECT value, updated_at FROM cache WHERE namespace=? AND key=?', (namespace, key))
+                cur = self._conn.execute(
+                    'SELECT value, updated_at FROM cache WHERE namespace=? AND key=?',
+                    (namespace, key),
+                )
                 row = cur.fetchone()
             if not row:
                 return None
@@ -82,7 +89,7 @@ class PersistentCache:
         except Exception:
             return None
 
-    def get_if_fresh(self, namespace: str, key: str, max_age_s: float) -> Optional[Any]:
+    def get_if_fresh(self, namespace: str, key: str, max_age_s: float) -> Any | None:
         """Return value if record exists and is newer than max_age_s; else None."""
         rec = self.get_raw(namespace, key)
         if not rec:
@@ -96,7 +103,7 @@ class PersistentCache:
         except Exception:
             return None
 
-    def get_any(self, namespace: str, key: str) -> Optional[Any]:
+    def get_any(self, namespace: str, key: str) -> Any | None:
         """Return value regardless of age; None if missing or on error."""
         rec = self.get_raw(namespace, key)
         return rec[0] if rec else None
@@ -127,7 +134,9 @@ class PersistentCache:
             return False
         try:
             with self._lock:
-                self._conn.execute('DELETE FROM cache WHERE namespace=? AND key=?', (namespace, key))
+                self._conn.execute(
+                    'DELETE FROM cache WHERE namespace=? AND key=?', (namespace, key)
+                )
             return True
         except Exception:
             return False
@@ -162,7 +171,9 @@ class PersistentCache:
         try:
             max_rows = max(1, int(max_rows))
             with self._lock:
-                cur = self._conn.execute('SELECT COUNT(*) FROM cache WHERE namespace=?', (namespace,))
+                cur = self._conn.execute(
+                    'SELECT COUNT(*) FROM cache WHERE namespace=?', (namespace,)
+                )
                 n = int(cur.fetchone()[0] or 0)
                 excess = max(0, n - max_rows)
                 if excess <= 0:
@@ -196,7 +207,9 @@ class PersistentCache:
             with self._lock:
                 cur = self._conn.execute('SELECT COUNT(*) FROM cache')
                 total = int(cur.fetchone()[0] or 0)
-                cur2 = self._conn.execute('SELECT namespace, COUNT(*) AS n, MAX(updated_at) AS last FROM cache GROUP BY namespace')
+                cur2 = self._conn.execute(
+                    'SELECT namespace, COUNT(*) AS n, MAX(updated_at) AS last FROM cache GROUP BY namespace'
+                )
                 per_ns = {}
                 for ns, n, last in cur2.fetchall() or []:
                     per_ns[str(ns)] = {

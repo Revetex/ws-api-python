@@ -1,11 +1,18 @@
 from __future__ import annotations
+
 import threading
 import tkinter as tk
-from tkinter import ttk, messagebox
-from typing import Dict, List
+from tkinter import messagebox, ttk
+
+from .ui_utils import format_money
 
 try:
-    from analytics.strategies import MovingAverageCrossStrategy, RSIReversionStrategy, ConfluenceStrategy
+    from analytics.strategies import (
+        ConfluenceStrategy,
+        MovingAverageCrossStrategy,
+        RSIReversionStrategy,
+    )
+
     HAS_ANALYTICS = True
 except Exception:  # pragma: no cover
     HAS_ANALYTICS = False
@@ -41,15 +48,31 @@ class ScreenerPanel:
         top = ttk.Frame(tab)
         top.pack(fill=tk.X, padx=6, pady=6)
         ttk.Label(top, text='Screener:').pack(side=tk.LEFT)
-        cb = ttk.Combobox(top, width=16, state='readonly', textvariable=self.var_scr, values=['day_gainers', 'day_losers', 'most_actives'])
+        cb = ttk.Combobox(
+            top,
+            width=16,
+            state='readonly',
+            textvariable=self.var_scr,
+            values=['day_gainers', 'day_losers', 'most_actives'],
+        )
         cb.pack(side=tk.LEFT, padx=4)
         ttk.Label(top, text='Région:').pack(side=tk.LEFT)
-        ttk.Combobox(top, width=5, state='readonly', textvariable=self.var_region, values=['CA', 'US']).pack(side=tk.LEFT, padx=2)
+        ttk.Combobox(
+            top, width=5, state='readonly', textvariable=self.var_region, values=['CA', 'US']
+        ).pack(side=tk.LEFT, padx=2)
         ttk.Label(top, text='N:').pack(side=tk.LEFT)
-        ttk.Spinbox(top, from_=5, to=100, width=5, textvariable=self.var_count).pack(side=tk.LEFT, padx=2)
+        ttk.Spinbox(top, from_=5, to=100, width=5, textvariable=self.var_count).pack(
+            side=tk.LEFT, padx=2
+        )
         ttk.Separator(top, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
         ttk.Label(top, text='Stratégie:').pack(side=tk.LEFT)
-        cb2 = ttk.Combobox(top, width=14, state='readonly', textvariable=self.var_strategy, values=['ma_cross', 'rsi_reversion', 'confluence'])
+        cb2 = ttk.Combobox(
+            top,
+            width=14,
+            state='readonly',
+            textvariable=self.var_strategy,
+            values=['ma_cross', 'rsi_reversion', 'confluence'],
+        )
         cb2.pack(side=tk.LEFT, padx=2)
         # Params row
         prm = ttk.Frame(tab)
@@ -61,35 +84,64 @@ class ScreenerPanel:
         ttk.Label(prm, text='RSI Low:').pack(side=tk.LEFT, padx=(12, 2))
         ttk.Spinbox(prm, from_=5, to=45, width=4, textvariable=self.var_rsi_low).pack(side=tk.LEFT)
         ttk.Label(prm, text='RSI High:').pack(side=tk.LEFT, padx=(6, 2))
-        ttk.Spinbox(prm, from_=55, to=95, width=4, textvariable=self.var_rsi_high).pack(side=tk.LEFT)
+        ttk.Spinbox(prm, from_=55, to=95, width=4, textvariable=self.var_rsi_high).pack(
+            side=tk.LEFT
+        )
         ttk.Label(prm, text='RSI Period:').pack(side=tk.LEFT, padx=(12, 2))
-        ttk.Spinbox(prm, from_=5, to=50, width=4, textvariable=self.var_rsi_period).pack(side=tk.LEFT)
+        ttk.Spinbox(prm, from_=5, to=50, width=4, textvariable=self.var_rsi_period).pack(
+            side=tk.LEFT
+        )
         # Volatility
         prm2 = ttk.Frame(tab)
         prm2.pack(fill=tk.X, padx=6)
         lbl_bw = ttk.Label(prm2, text='Min BBand BW:')
         lbl_bw.pack(side=tk.LEFT)
-        sp_bw = ttk.Spinbox(prm2, from_=0.0, to=1.0, increment=0.01, width=6, textvariable=self.var_min_bw)
+        sp_bw = ttk.Spinbox(
+            prm2, from_=0.0, to=1.0, increment=0.01, width=6, textvariable=self.var_min_bw
+        )
         sp_bw.pack(side=tk.LEFT)
         ttk.Label(prm2, text='BBand Window:').pack(side=tk.LEFT, padx=(6, 2))
         ttk.Spinbox(prm2, from_=10, to=60, width=5, textvariable=self.var_bb_win).pack(side=tk.LEFT)
         try:
             from .ui_utils import attach_tooltip
-            attach_tooltip(lbl_bw, 'Filtre de volatilité (Bollinger bandwidth). 0.00 = aucun filtre; 0.05–0.10 = faible vol; 0.10–0.20 = modérée; >0.20 = forte. Recommandé: 0.05–0.15 pour éviter le bruit.')
-            attach_tooltip(sp_bw, 'Valeur minimale du Bollinger bandwidth pour générer des signaux. Échelle 0–1. Ex.: 0.08 laisse passer des tendances, 0.15 filtre les ranges trop serrés.')
+
+            attach_tooltip(
+                lbl_bw,
+                'Filtre de volatilité (Bollinger bandwidth). 0.00 = aucun filtre; 0.05–0.10 = faible vol; 0.10–0.20 = modérée; >0.20 = forte. Recommandé: 0.05–0.15 pour éviter le bruit.',
+            )
+            attach_tooltip(
+                sp_bw,
+                'Valeur minimale du Bollinger bandwidth pour générer des signaux. Échelle 0–1. Ex.: 0.08 laisse passer des tendances, 0.15 filtre les ranges trop serrés.',
+            )
         except Exception:
             pass
         # Action bar
         act = ttk.Frame(tab)
         act.pack(fill=tk.X, padx=6, pady=(4, 2))
         ttk.Button(act, text='Scanner maintenant', command=self.scan_now).pack(side=tk.LEFT)
-        ttk.Button(act, text='Analyser sélection', command=self.analyze_selected).pack(side=tk.LEFT, padx=6)
+        ttk.Button(act, text='Analyser sélection', command=self.analyze_selected).pack(
+            side=tk.LEFT, padx=6
+        )
         ttk.Button(act, text='Notifier sélection', command=self.notify_selected).pack(side=tk.LEFT)
         # Inline status
         self.lbl_status = ttk.Label(tab, text='')
         self.lbl_status.pack(fill=tk.X, padx=6)
         # Results
-        self.tree = ttk.Treeview(tab, columns=('symbol', 'name', 'price', 'changePct', 'volume', 'signal', 'explanation', 'exchange'), show='headings', height=12)
+        self.tree = ttk.Treeview(
+            tab,
+            columns=(
+                'symbol',
+                'name',
+                'price',
+                'changePct',
+                'volume',
+                'signal',
+                'explanation',
+                'exchange',
+            ),
+            show='headings',
+            height=12,
+        )
         for c, (h, w, a) in {
             'symbol': ('Symbole', 90, tk.W),
             'name': ('Nom', 220, tk.W),
@@ -103,6 +155,127 @@ class ScreenerPanel:
             self.tree.heading(c, text=h)
             self.tree.column(c, width=w, anchor=a, stretch=True)
         self.tree.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
+
+    def build_compact(self, parent: tk.Widget) -> tk.Frame:
+        """Build a compact Screener UI inside an arbitrary parent Frame.
+
+        Returns the created frame container. Unlike build(), this does not add a tab to a notebook,
+        so it can be embedded alongside other widgets (e.g., in a combined view).
+        """
+        tab = ttk.Frame(parent)
+        self.tab = tab
+        # Top bar
+        top = ttk.Frame(tab)
+        top.pack(fill=tk.X, padx=6, pady=6)
+        ttk.Label(top, text='Screener:').pack(side=tk.LEFT)
+        cb = ttk.Combobox(
+            top,
+            width=16,
+            state='readonly',
+            textvariable=self.var_scr,
+            values=['day_gainers', 'day_losers', 'most_actives'],
+        )
+        cb.pack(side=tk.LEFT, padx=4)
+        ttk.Label(top, text='Région:').pack(side=tk.LEFT)
+        ttk.Combobox(
+            top, width=5, state='readonly', textvariable=self.var_region, values=['CA', 'US']
+        ).pack(side=tk.LEFT, padx=2)
+        ttk.Label(top, text='N:').pack(side=tk.LEFT)
+        ttk.Spinbox(top, from_=5, to=100, width=5, textvariable=self.var_count).pack(
+            side=tk.LEFT, padx=2
+        )
+        ttk.Separator(top, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
+        ttk.Label(top, text='Stratégie:').pack(side=tk.LEFT)
+        cb2 = ttk.Combobox(
+            top,
+            width=14,
+            state='readonly',
+            textvariable=self.var_strategy,
+            values=['ma_cross', 'rsi_reversion', 'confluence'],
+        )
+        cb2.pack(side=tk.LEFT, padx=2)
+        # Params row
+        prm = ttk.Frame(tab)
+        prm.pack(fill=tk.X, padx=6)
+        ttk.Label(prm, text='Fast:').pack(side=tk.LEFT)
+        ttk.Spinbox(prm, from_=3, to=60, width=4, textvariable=self.var_fast).pack(side=tk.LEFT)
+        ttk.Label(prm, text='Slow:').pack(side=tk.LEFT, padx=(6, 0))
+        ttk.Spinbox(prm, from_=5, to=200, width=4, textvariable=self.var_slow).pack(side=tk.LEFT)
+        ttk.Label(prm, text='RSI Low:').pack(side=tk.LEFT, padx=(12, 2))
+        ttk.Spinbox(prm, from_=5, to=45, width=4, textvariable=self.var_rsi_low).pack(side=tk.LEFT)
+        ttk.Label(prm, text='RSI High:').pack(side=tk.LEFT, padx=(6, 2))
+        ttk.Spinbox(prm, from_=55, to=95, width=4, textvariable=self.var_rsi_high).pack(
+            side=tk.LEFT
+        )
+        ttk.Label(prm, text='RSI Period:').pack(side=tk.LEFT, padx=(12, 2))
+        ttk.Spinbox(prm, from_=5, to=50, width=4, textvariable=self.var_rsi_period).pack(
+            side=tk.LEFT
+        )
+        # Volatility
+        prm2 = ttk.Frame(tab)
+        prm2.pack(fill=tk.X, padx=6)
+        lbl_bw = ttk.Label(prm2, text='Min BBand BW:')
+        lbl_bw.pack(side=tk.LEFT)
+        sp_bw = ttk.Spinbox(
+            prm2, from_=0.0, to=1.0, increment=0.01, width=6, textvariable=self.var_min_bw
+        )
+        sp_bw.pack(side=tk.LEFT)
+        ttk.Label(prm2, text='BBand Window:').pack(side=tk.LEFT, padx=(6, 2))
+        ttk.Spinbox(prm2, from_=10, to=60, width=5, textvariable=self.var_bb_win).pack(side=tk.LEFT)
+        try:
+            from .ui_utils import attach_tooltip
+
+            attach_tooltip(
+                lbl_bw,
+                'Filtre de volatilité (Bollinger bandwidth). 0.00 = aucun filtre; 0.05–0.10 = faible vol; 0.10–0.20 = modérée; >0.20 = forte. Recommandé: 0.05–0.15 pour éviter le bruit.',
+            )
+            attach_tooltip(
+                sp_bw,
+                'Valeur minimale du Bollinger bandwidth pour générer des signaux. Échelle 0–1. Ex.: 0.08 laisse passer des tendances, 0.15 filtre les ranges trop serrés.',
+            )
+        except Exception:
+            pass
+        # Action bar
+        act = ttk.Frame(tab)
+        act.pack(fill=tk.X, padx=6, pady=(4, 2))
+        ttk.Button(act, text='Scanner maintenant', command=self.scan_now).pack(side=tk.LEFT)
+        ttk.Button(act, text='Analyser sélection', command=self.analyze_selected).pack(
+            side=tk.LEFT, padx=6
+        )
+        ttk.Button(act, text='Notifier sélection', command=self.notify_selected).pack(side=tk.LEFT)
+        # Inline status
+        self.lbl_status = ttk.Label(tab, text='')
+        self.lbl_status.pack(fill=tk.X, padx=6)
+        # Results
+        self.tree = ttk.Treeview(
+            tab,
+            columns=(
+                'symbol',
+                'name',
+                'price',
+                'changePct',
+                'volume',
+                'signal',
+                'explanation',
+                'exchange',
+            ),
+            show='headings',
+            height=10,
+        )
+        for c, (h, w, a) in {
+            'symbol': ('Symbole', 90, tk.W),
+            'name': ('Nom', 200, tk.W),
+            'price': ('Prix', 80, tk.E),
+            'changePct': ('%Chg', 70, tk.E),
+            'volume': ('Volume', 100, tk.E),
+            'signal': ('Signal', 90, tk.W),
+            'explanation': ('Explications', 320, tk.W),
+            'exchange': ('Échange', 90, tk.W),
+        }.items():
+            self.tree.heading(c, text=h)
+            self.tree.column(c, width=w, anchor=a, stretch=True)
+        self.tree.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
+        return tab
 
     def _set_status(self, msg: str, error: bool = False):
         try:
@@ -163,24 +336,37 @@ class ScreenerPanel:
 
         def worker():
             try:
-                raw = self.app.api_manager.yahoo.get_predefined_screener(scr, count=n, region=region)
+                raw = self.app.api_manager.yahoo.get_predefined_screener(
+                    scr, count=n, region=region
+                )
             except Exception as e:
-                self.app.after(0, lambda e=e: (self.app.set_status(f"Screener: {e}", error=True), self._set_status(f"Erreur: {e}", error=True)))
+                self.app.after(
+                    0,
+                    lambda e=e: (
+                        self.app.set_status(f"Screener: {e}", error=True),
+                        self._set_status(f"Erreur: {e}", error=True),
+                    ),
+                )
                 return
             # Evaluate signals (optional)
-            rows: List[Dict] = []
+            rows: list[dict] = []
             for q in raw:
                 sym = q.get('symbol')
                 name = q.get('name')
                 price = q.get('price')
-                changePct = q.get('changePct')
+                change_pct = q.get('changePct')
                 vol = q.get('volume')
                 exch = q.get('exchange')
                 sig_kind = ''
                 reason = ''
                 if HAS_ANALYTICS:
                     try:
-                        ts = self.app.api_manager.get_time_series(sym, interval='1day', outputsize='compact') or {}
+                        ts = (
+                            self.app.api_manager.get_time_series(
+                                sym, interval='1day', outputsize='compact'
+                            )
+                            or {}
+                        )
                         closes = self._extract_closes(ts)
                         if len(closes) >= 30:
                             sigs = self._generate_signals(closes)
@@ -192,10 +378,18 @@ class ScreenerPanel:
                                 reason = s.reason
                     except Exception:
                         pass
-                rows.append({
-                    'symbol': sym, 'name': name, 'price': price, 'changePct': changePct, 'volume': vol,
-                    'signal': sig_kind, 'explanation': reason, 'exchange': exch
-                })
+                rows.append(
+                    {
+                        'symbol': sym,
+                        'name': name,
+                        'price': price,
+                        'changePct': change_pct,
+                        'volume': vol,
+                        'signal': sig_kind,
+                        'explanation': reason,
+                        'exchange': exch,
+                    }
+                )
 
             def _apply():
                 try:
@@ -204,17 +398,34 @@ class ScreenerPanel:
                     self._set_status(f"Terminé: {len(rows)} résultats")
                 except Exception:
                     pass
+
             self.app.after(0, _apply)
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _fill_tree(self, rows: List[Dict]):
+    def _fill_tree(self, rows: list[dict]):
         for iid in self.tree.get_children():
             self.tree.delete(iid)
+        if not rows:
+            self.tree.insert(
+                '', tk.END, values=("—", "Aucun résultat", "", "", "", "", "", ""), tags=("even",)
+            )
+            return
         for i, r in enumerate(rows):
             tag = 'even' if i % 2 == 0 else 'odd'
-            vals = (r.get('symbol'), r.get('name'), f"{(r.get('price') or 0):.2f}",
-                    f"{(r.get('changePct') or 0):.2f}", r.get('volume'), r.get('signal') or '', r.get('explanation') or '', r.get('exchange') or '')
+            # Use app base currency for display clarity
+            cur = getattr(self.app, 'base_currency', 'CAD')
+            price = r.get('price')
+            vals = (
+                r.get('symbol'),
+                r.get('name'),
+                format_money(price, cur, with_symbol=True) if price is not None else '',
+                f"{(r.get('changePct') or 0):.2f}",
+                r.get('volume'),
+                r.get('signal') or '',
+                r.get('explanation') or '',
+                r.get('exchange') or '',
+            )
             self.tree.insert('', tk.END, values=vals, tags=(tag,))
 
     def analyze_selected(self):
@@ -240,21 +451,31 @@ class ScreenerPanel:
             sym = vals[0]
             sig = vals[5] or 'signal'
             exp = vals[6] or ''
-            if getattr(self.app, 'api_manager', None) and getattr(self.app.api_manager, 'telegram', None):
+            if getattr(self.app, 'api_manager', None) and getattr(
+                self.app.api_manager, 'telegram', None
+            ):
                 title = f"Strategy Alert - TECH_{sig.upper()} {sym}"
                 msg = f"{sym}: {exp}"
                 ok = self.app.api_manager.telegram.send_alert(title, msg, level='ALERT')
-                self.app.set_status('Notification envoyée' if ok else 'Échec notification', error=not ok)
+                self.app.set_status(
+                    'Notification envoyée' if ok else 'Échec notification', error=not ok
+                )
         except Exception:
             pass
 
-    def _generate_signals(self, closes: List[float]):
+    def _generate_signals(self, closes: list[float]):
         if self.var_strategy.get() == 'rsi_reversion':
             # Use RSI period and thresholds from UI and pass volatility filter
             period = int(self.var_rsi_period.get() or 14)
             lo = int(self.var_rsi_low.get() or 30)
             hi = int(self.var_rsi_high.get() or 70)
-            return RSIReversionStrategy(period, lo, hi, float(self.var_min_bw.get() or 0.0), int(self.var_bb_win.get() or 20)).generate(closes)
+            return RSIReversionStrategy(
+                period,
+                lo,
+                hi,
+                float(self.var_min_bw.get() or 0.0),
+                int(self.var_bb_win.get() or 20),
+            ).generate(closes)
         if self.var_strategy.get() == 'confluence':
             fast = int(self.var_fast.get() or 10)
             slow = int(self.var_slow.get() or 30)
@@ -262,16 +483,26 @@ class ScreenerPanel:
                 slow = max(fast + 1, 5)
             rb = int(self.var_rsi_high.get() or 55)
             rs = int(self.var_rsi_low.get() or 45)
-            return ConfluenceStrategy(fast, slow, int(self.var_rsi_period.get() or 14), rb, rs, float(self.var_min_bw.get() or 0.0), int(self.var_bb_win.get() or 20)).generate(closes)
+            return ConfluenceStrategy(
+                fast,
+                slow,
+                int(self.var_rsi_period.get() or 14),
+                rb,
+                rs,
+                float(self.var_min_bw.get() or 0.0),
+                int(self.var_bb_win.get() or 20),
+            ).generate(closes)
         fast = int(self.var_fast.get() or 10)
         slow = int(self.var_slow.get() or 30)
         if fast >= slow:
             slow = max(fast + 1, 5)
-        return MovingAverageCrossStrategy(fast, slow, float(self.var_min_bw.get() or 0.0), int(self.var_bb_win.get() or 20)).generate(closes)
+        return MovingAverageCrossStrategy(
+            fast, slow, float(self.var_min_bw.get() or 0.0), int(self.var_bb_win.get() or 20)
+        ).generate(closes)
 
     @staticmethod
-    def _extract_closes(series: Dict) -> List[float]:
-        closes: List[float] = []
+    def _extract_closes(series: dict) -> list[float]:
+        closes: list[float] = []
         try:
             k = next((k for k in series.keys() if 'Time Series' in k), None)
             ts = series.get(k) if k else None

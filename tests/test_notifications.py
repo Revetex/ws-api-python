@@ -1,7 +1,7 @@
 import pytest
 
-from external_apis import APIManager
 from ai_agent import AIAgent
+from external_apis import APIManager
 
 
 class FakeTelegram:
@@ -105,6 +105,7 @@ def test_notify_alert_level_gating_warn_and_alert(monkeypatch, patch_app_config)
     # Disable WARN -> should skip warn sends
     patch_app_config(enabled=True, include_tech=True)
     from wsapp_gui.config import app_config
+
     app_config.set('notifications.warn', False)
     api = APIManager()
     fake = FakeTelegram()
@@ -129,8 +130,32 @@ def test_ai_agent_symbol_detection_word_boundaries():
     # Portfolio with potentially ambiguous symbol
     agent.last_positions = [
         # ... minimal positions for test
-        type('P', (), {'symbol': 'ALL', 'name': 'Allstate', 'quantity': 1.0, 'value': 100.0, 'currency': 'USD', 'pnl_abs': None, 'pnl_pct': None})(),
-        type('P', (), {'symbol': 'AAPL', 'name': 'Apple', 'quantity': 1.0, 'value': 200.0, 'currency': 'USD', 'pnl_abs': None, 'pnl_pct': None})(),
+        type(
+            'P',
+            (),
+            {
+                'symbol': 'ALL',
+                'name': 'Allstate',
+                'quantity': 1.0,
+                'value': 100.0,
+                'currency': 'USD',
+                'pnl_abs': None,
+                'pnl_pct': None,
+            },
+        )(),
+        type(
+            'P',
+            (),
+            {
+                'symbol': 'AAPL',
+                'name': 'Apple',
+                'quantity': 1.0,
+                'value': 200.0,
+                'currency': 'USD',
+                'pnl_abs': None,
+                'pnl_pct': None,
+            },
+        )(),
     ]
     # The word 'allocation' contains 'ALL' but should not match as a symbol
     found = agent._find_symbols_in_text('Vérifions la diversification et l\'allocation actuelle')

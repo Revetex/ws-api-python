@@ -1,6 +1,7 @@
 """Module de gestion du chat et des signaux IA pour l'application Wealthsimple."""
 
 from __future__ import annotations
+
 import threading
 from typing import TYPE_CHECKING
 
@@ -13,15 +14,27 @@ class ChatManager:
 
     def __init__(self, app: WSApp):
         self.app = app
+        # Simple prompt history (most recent last)
+        self._history: list[str] = []
+        self._hist_idx: int | None = None
 
     def _chat_send(self) -> None:
         """Envoie un message dans le chat IA."""
-        message = self.app.var_chat.get().strip()
+        raw = self.app.var_chat.get()
+        placeholder = getattr(self.app, '_chat_placeholder', None)
+        if placeholder and raw == placeholder:
+            message = ''
+        else:
+            message = (raw or '').strip()
         if not message:
             return
 
         # Afficher le message de l'utilisateur
         self._append_chat(f"Vous: {message}")
+        # Mémoriser dans l'historique (éviter doublons consécutifs)
+        if not self._history or self._history[-1] != message:
+            self._history.append(message)
+        self._hist_idx = None
         self.app.var_chat.set("")  # Effacer le champ de saisie
 
         # Désactiver les entrées et afficher un statut
@@ -63,9 +76,55 @@ class ChatManager:
                             self.app.lbl_chat_status.configure(text='')
                     except Exception:
                         pass
+
                 self.app.after(0, _reenable)
 
         threading.Thread(target=worker, daemon=True).start()
+
+    # ----- Historique: navigation avec ↑ / ↓ -----
+    def history_prev(self, *_args) -> str | None:
+        if not self._history:
+            return None
+        if self._hist_idx is None:
+            self._hist_idx = len(self._history) - 1
+        else:
+            self._hist_idx = max(0, self._hist_idx - 1)
+        try:
+            self.app.var_chat.set(self._history[self._hist_idx])
+            if getattr(self.app, '_chat_placeholder_active', False):
+                self.app._chat_placeholder_active = False
+            if hasattr(self.app, 'ent_chat'):
+                self.app.ent_chat.icursor('end')  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        return 'break'
+
+    def history_next(self, *_args) -> str | None:
+        if not self._history:
+            return None
+        if self._hist_idx is None:
+            return None
+        self._hist_idx = min(len(self._history), self._hist_idx + 1)
+        try:
+            if self._hist_idx >= len(self._history):
+                self.app.var_chat.set("")
+                self._hist_idx = None
+            else:
+                self.app.var_chat.set(self._history[self._hist_idx])
+            if getattr(self.app, '_chat_placeholder_active', False):
+                self.app._chat_placeholder_active = False
+            if hasattr(self.app, 'ent_chat'):
+                self.app.ent_chat.icursor('end')  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        return 'break'
+
+    def clear_entry(self, *_args) -> str | None:
+        try:
+            self.app.var_chat.set("")
+        except Exception:
+            pass
+        return 'break'
 
     def _append_chat(self, text: str) -> None:
         """Ajoute un message au chat."""
@@ -129,11 +188,7 @@ class ChatManager:
             change = mover.get('change', 'N/A')
             price = mover.get('price', 'N/A')
 
-            self.app.tree_gainers.insert('', 'end', values=(
-                symbol,
-                price,
-                change
-            ))
+            self.app.tree_gainers.insert('', 'end', values=(symbol, price, change))
 
     def _update_notify_prefs(self) -> None:
         """Met à jour les préférences de notification."""

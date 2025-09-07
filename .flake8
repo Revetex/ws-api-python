@@ -1,0 +1,16 @@
+# Flake8 configuration for this project
+[flake8]
+# Allow long lines in UI/layout and generated-like files; most E501 are intentional.
+# Ignore cosmetic whitespace at EOF/blank lines until files are normalized.
+extend-ignore = E501, W503, E203, W391, W293
+max-line-length = 100
+exclude =
+	.git,
+	__pycache__,
+	build,
+	dist,
+	.venv,
+	.venv*,
+	venv,
+	venv*,
+	WS_API.egg-info

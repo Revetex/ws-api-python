@@ -1,9 +1,10 @@
 """Module de gestion des actualités et données intraday pour l'application Wealthsimple."""
 
 from __future__ import annotations
+
 import threading
 import webbrowser
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .app import WSApp  # updated reference
@@ -14,7 +15,7 @@ class NewsManager:
 
     def __init__(self, app: WSApp):
         self.app = app
-        self._news_cache: List[dict] = []
+        self._news_cache = []
 
     def load_intraday(self) -> None:
         """Charge les données intraday pour un symbole."""
@@ -44,8 +45,7 @@ class NewsManager:
 
                 # Charger les données historiques
                 historical_data = self.app.api.get_security_historical_quotes(
-                    security_id,
-                    time_range='1d'
+                    security_id, time_range='1d'
                 )
 
                 self.app.after(0, lambda: self._show_intraday(historical_data, symbol))
@@ -56,7 +56,7 @@ class NewsManager:
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _show_intraday(self, data: List[dict], symbol: str) -> None:
+    def _show_intraday(self, data: list[dict], symbol: str) -> None:
         """Affiche les données intraday dans l'interface."""
         if not data:
             self.app.set_status("Aucune donnée intraday disponible", error=True)
@@ -82,14 +82,14 @@ class NewsManager:
                         'title': 'Marché en hausse aujourd\'hui',
                         'source': 'Financial Times',
                         'url': 'https://example.com/news1',
-                        'published_at': '2025-08-16T10:00:00Z'
+                        'published_at': '2025-08-16T10:00:00Z',
                     },
                     {
                         'title': 'Résultats trimestriels positifs',
                         'source': 'Bloomberg',
                         'url': 'https://example.com/news2',
-                        'published_at': '2025-08-16T09:30:00Z'
-                    }
+                        'published_at': '2025-08-16T09:30:00Z',
+                    },
                 ]
 
                 self._news_cache = fake_news
@@ -101,7 +101,7 @@ class NewsManager:
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _show_news(self, articles: List[dict]) -> None:
+    def _show_news(self, articles: list[dict]) -> None:
         """Affiche les actualités dans l'interface."""
         if not hasattr(self.app, 'tree_news'):
             return
@@ -116,11 +116,7 @@ class NewsManager:
             source = article.get('source', 'N/A')
             date = article.get('published_at', '')[:10]  # Format YYYY-MM-DD
 
-            self.app.tree_news.insert('', 'end', values=(
-                title,
-                source,
-                date
-            ))
+            self.app.tree_news.insert('', 'end', values=(title, source, date))
 
     def open_news_url(self):
         """Ouvre l'URL de l'actualité sélectionnée."""

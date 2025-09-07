@@ -1,9 +1,15 @@
-from typing import Any, Dict
+from typing import Any
 
-from external_apis import APIManager, YahooFinanceClient, TelegramNotifier, NewsAPIClient, AlphaVantageClient
+from external_apis import (
+    AlphaVantageClient,
+    APIManager,
+    NewsAPIClient,
+    TelegramNotifier,
+    YahooFinanceClient,
+)
 
 
-def _dummy_yahoo_quote_json(price=123.45, change=1.23, change_pct=1.0) -> Dict[str, Any]:
+def _dummy_yahoo_quote_json(price=123.45, change=1.23, change_pct=1.0) -> dict[str, Any]:
     return {
         'quoteResponse': {
             'result': [

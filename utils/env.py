@@ -6,15 +6,19 @@ Usage:
 
 Won't overwrite existing environment variables. Silent on errors.
 """
+
 from __future__ import annotations
+
 import os
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 DEFAULT_ENV_FILENAMES: Iterable[str] = ('.env', '.env.local')
 
 
-def load_dotenv_safe(filenames: Iterable[str] = DEFAULT_ENV_FILENAMES, base: Path | None = None) -> None:
+def load_dotenv_safe(
+    filenames: Iterable[str] = DEFAULT_ENV_FILENAMES, base: Path | None = None
+) -> None:
     base = base or Path(__file__).resolve().parent.parent
     for name in filenames:
         path = base / name
@@ -28,7 +32,7 @@ def load_dotenv_safe(filenames: Iterable[str] = DEFAULT_ENV_FILENAMES, base: Pat
                 k, v = line.split('=', 1)
                 k = k.strip()
                 raw = v.strip()
-                if (raw.startswith(('"', "'")) and len(raw) > 1):
+                if raw.startswith(('"', "'")) and len(raw) > 1:
                     q = raw[0]
                     closing = raw.find(q, 1)
                     if closing != -1:

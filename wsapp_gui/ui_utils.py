@@ -1,7 +1,43 @@
-"""UI utility helpers for Tkinter/ttk widgets."""
+"""UI utility helpers for Tkinter/ttk widgets.
 
-from typing import Any, Optional
+Includes small helpers to toggle widget states, attach tooltips, and a
+lightweight money formatter for consistent currency display.
+"""
+
 import tkinter as tk
+from typing import Any
+
+# Minimal currency symbol map; fallback to code at the end for clarity
+_CURR_SYM = {
+    'USD': '$',
+    'CAD': 'C$',
+    'EUR': '€',
+    'GBP': '£',
+    'JPY': '¥',
+}
+
+
+def format_money(
+    value: float | int | None, currency: str | None = None, *, with_symbol: bool = False
+) -> str:
+    """Format a number with 2 decimals and append currency.
+
+    - If ``with_symbol`` is True and a known mapping exists, prefix with the symbol (e.g., $).
+    - Otherwise, append the currency code after the number (e.g., 123.45 CAD).
+    - Returns an empty string for None values.
+    """
+    try:
+        if value is None:
+            return ''
+        val = float(value)
+        cur = (currency or '').upper() or 'CAD'
+        if with_symbol and cur in _CURR_SYM:
+            sym = _CURR_SYM[cur]
+            return f"{sym}{val:,.2f}"
+        # default: number followed by code for explicitness
+        return f"{val:,.2f} {cur}"
+    except Exception:
+        return str(value) if value is not None else ''
 
 
 def set_combobox_enabled(cmb: Any, enabled: bool) -> None:
@@ -28,8 +64,8 @@ class _ToolTip:
         self.widget = widget
         self.text = text
         self.delay = delay_ms
-        self._after_id: Optional[str] = None
-        self._tip: Optional[tk.Toplevel] = None
+        self._after_id: str | None = None
+        self._tip: tk.Toplevel | None = None
         try:
             widget.bind('<Enter>', self._on_enter)
             widget.bind('<Leave>', self._on_leave)
@@ -86,3 +122,11 @@ def attach_tooltip(widget: Any, text: str, delay_ms: int = 500) -> None:
         _ToolTip(widget, text, delay_ms)
     except Exception:
         pass
+
+
+__all__ = [
+    'set_combobox_enabled',
+    'set_widget_enabled',
+    'attach_tooltip',
+    'format_money',
+]

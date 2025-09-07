@@ -7,6 +7,7 @@ class DummyResp:
     def __init__(self, status=200, content=b''):
         self.status_code = status
         self.content = content
+        self.headers = {'content-type': 'image/png'}
 
     def raise_for_status(self):
         if self.status_code >= 400:
@@ -21,10 +22,16 @@ def test_logo_caching(monkeypatch):
         # return small valid PNG (1x1 transparent)
         return DummyResp(200, b"\x89PNG\r\n\x1a\n")
 
-    import requests
-    monkeypatch.setattr(requests, 'get', fake_get)
+    # patch HTTP client used by MediaManager
+    import utils.http_client as http_client
 
-    mm = MediaManager()
+    class DummyHTTP:
+        def get(self, url, params=None):  # noqa: ARG002
+            return fake_get(url)
+
+    monkeypatch.setattr(http_client, 'HTTPClient', lambda **kw: DummyHTTP())
+
+    mm = MediaManager(ttl_sec=9999)
 
     results = []
 

@@ -1,7 +1,8 @@
-import pytest
 import tkinter as tk
 
-from wsapp_gui.charts import ChartController, HAS_MPL
+import pytest
+
+from wsapp_gui.charts import HAS_MPL, ChartController
 
 
 class DummyAPI:

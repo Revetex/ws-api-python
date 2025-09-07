@@ -1,21 +1,25 @@
-from ws_api.exceptions import (
+"""ws_api package initializer: expose public API and exceptions."""
+
+from __future__ import annotations
+
+from .exceptions import (
     CurlException,
+    LoginFailedException,
     ManualLoginRequired,
     OTPRequiredException,
     UnexpectedException,
     WSApiException,
-    LoginFailedException,
 )
-from ws_api.session import WSAPISession
-from ws_api.wealthsimple_api import WealthsimpleAPI
+from .session import WSAPISession
+from .wealthsimple_api import WealthsimpleAPI
 
 __all__ = [
-    "CurlException",
-    "ManualLoginRequired",
-    "OTPRequiredException",
-    "UnexpectedException",
-    "WSApiException",
-    "LoginFailedException",
-    "WSAPISession",
-    "WealthsimpleAPI",
+    'WealthsimpleAPI',
+    'WSAPISession',
+    'ManualLoginRequired',
+    'OTPRequiredException',
+    'WSApiException',
+    'LoginFailedException',
+    'CurlException',
+    'UnexpectedException',
 ]

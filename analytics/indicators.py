@@ -1,11 +1,12 @@
 from __future__ import annotations
-from typing import List, Sequence, Tuple, Optional
+
+from collections.abc import Sequence
 
 
-def sma(values: Sequence[float], window: int) -> List[Optional[float]]:
+def sma(values: Sequence[float], window: int) -> list[float | None]:
     if window <= 0:
         raise ValueError("window must be > 0")
-    out: List[Optional[float]] = [None] * len(values)
+    out: list[float | None] = [None] * len(values)
     s = 0.0
     for i, v in enumerate(values):
         s += float(v)
@@ -16,12 +17,12 @@ def sma(values: Sequence[float], window: int) -> List[Optional[float]]:
     return out
 
 
-def ema(values: Sequence[float], window: int) -> List[Optional[float]]:
+def ema(values: Sequence[float], window: int) -> list[float | None]:
     if window <= 0:
         raise ValueError("window must be > 0")
-    out: List[Optional[float]] = [None] * len(values)
+    out: list[float | None] = [None] * len(values)
     k = 2 / (window + 1)
-    ema_prev: Optional[float] = None
+    ema_prev: float | None = None
     for i, v in enumerate(values):
         x = float(v)
         if ema_prev is None:
@@ -35,19 +36,19 @@ def ema(values: Sequence[float], window: int) -> List[Optional[float]]:
     return out
 
 
-def rsi(values: Sequence[float], period: int = 14) -> List[Optional[float]]:
+def rsi(values: Sequence[float], period: int = 14) -> list[float | None]:
     if period <= 0:
         raise ValueError("period must be > 0")
-    out: List[Optional[float]] = [None] * len(values)
-    gains: List[float] = [0.0] * len(values)
-    losses: List[float] = [0.0] * len(values)
+    out: list[float | None] = [None] * len(values)
+    gains: list[float] = [0.0] * len(values)
+    losses: list[float] = [0.0] * len(values)
     for i in range(1, len(values)):
         delta = float(values[i]) - float(values[i - 1])
         gains[i] = max(0.0, delta)
         losses[i] = max(0.0, -delta)
     # Wilder's smoothing
-    avg_gain: Optional[float] = None
-    avg_loss: Optional[float] = None
+    avg_gain: float | None = None
+    avg_loss: float | None = None
     for i in range(1, len(values)):
         if i < period:
             # seed period using simple average at period boundary
@@ -63,16 +64,18 @@ def rsi(values: Sequence[float], period: int = 14) -> List[Optional[float]]:
     return out
 
 
-def macd(values: Sequence[float], fast: int = 12, slow: int = 26, signal: int = 9) -> Tuple[List[Optional[float]], List[Optional[float]], List[Optional[float]]]:
+def macd(
+    values: Sequence[float], fast: int = 12, slow: int = 26, signal: int = 9
+) -> tuple[list[float | None], list[float | None], list[float | None]]:
     ema_fast = ema(values, fast)
     ema_slow = ema(values, slow)
-    macd_line: List[Optional[float]] = [None] * len(values)
+    macd_line: list[float | None] = [None] * len(values)
     for i in range(len(values)):
         a = ema_fast[i]
         b = ema_slow[i]
         macd_line[i] = (a - b) if (a is not None and b is not None) else None
     # signal line as EMA of macd_line (replace None with previous for stability)
-    macd_filled: List[float] = []
+    macd_filled: list[float] = []
     last = 0.0
     for v in macd_line:
         if v is None:
@@ -81,28 +84,30 @@ def macd(values: Sequence[float], fast: int = 12, slow: int = 26, signal: int = 
             last = float(v)
             macd_filled.append(last)
     signal_line = ema(macd_filled, signal)
-    hist: List[Optional[float]] = [None if (m is None or s is None) else (m - s) for m, s in zip(macd_line, signal_line)]
+    hist: list[float | None] = [
+        None if (m is None or s is None) else (m - s) for m, s in zip(macd_line, signal_line)
+    ]
     return macd_line, signal_line, hist
 
 
-def bollinger(values: Sequence[float], window: int = 20, num_std: float = 2.0) -> Tuple[List[Optional[float]], List[Optional[float]], List[Optional[float]]]:
+def bollinger(
+    values: Sequence[float], window: int = 20, num_std: float = 2.0
+) -> tuple[list[float | None], list[float | None], list[float | None]]:
     # Compute SMA and rolling std deviation without numpy
     ma = sma(values, window)
     out_mid = ma
-    out_upper: List[Optional[float]] = [None] * len(values)
-    out_lower: List[Optional[float]] = [None] * len(values)
+    out_upper: list[float | None] = [None] * len(values)
+    out_lower: list[float | None] = [None] * len(values)
     for i in range(len(values)):
         if i < window - 1:
             continue
         window_vals = [float(x) for x in values[i - window + 1 : i + 1]]
         m = float(out_mid[i]) if out_mid[i] is not None else sum(window_vals) / window
         var = sum((x - m) ** 2 for x in window_vals) / window
-        std = var ** 0.5
+        std = var**0.5
         out_upper[i] = m + num_std * std
         out_lower[i] = m - num_std * std
     return out_upper, out_mid, out_lower
 
 
-__all__ = [
-    'sma', 'ema', 'rsi', 'macd', 'bollinger',
-]
+__all__ = ['sma', 'ema', 'rsi', 'macd', 'bollinger']

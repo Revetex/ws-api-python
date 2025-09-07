@@ -1,20 +1,20 @@
-class CurlException(Exception):
+class CurlException(Exception):  # noqa: N818
     pass
 
 
-class ManualLoginRequired(Exception):
+class ManualLoginRequired(Exception):  # noqa: N818
     pass
 
 
-class OTPRequiredException(Exception):
+class OTPRequiredException(Exception):  # noqa: N818
     pass
 
 
-class UnexpectedException(Exception):
+class UnexpectedException(Exception):  # noqa: N818
     pass
 
 
-class WSApiException(Exception):
+class WSApiException(Exception):  # noqa: N818
     def __init__(self, message: str, response=None):
         """
         Initialize the WSApiException.

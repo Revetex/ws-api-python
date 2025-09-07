@@ -1,10 +1,13 @@
 """Module de gestion de l'export pour l'application Wealthsimple."""
 
 from __future__ import annotations
+
 import csv
 from datetime import datetime
-from typing import TYPE_CHECKING
 from tkinter import filedialog, messagebox
+from typing import TYPE_CHECKING
+
+from .ui_utils import format_money
 
 if TYPE_CHECKING:
     from .app import WSApp  # updated reference
@@ -26,7 +29,7 @@ class ExportManager:
         filename = filedialog.asksaveasfilename(
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
-            title="Exporter les positions"
+            title="Exporter les positions",
         )
 
         if not filename:
@@ -37,10 +40,18 @@ class ExportManager:
                 writer = csv.writer(csvfile)
 
                 # En-têtes
-                writer.writerow([
-                    'Symbole', 'Nom', 'Quantité', 'Valeur marchande',
-                    'Prix moyen', 'Gain/Perte', 'Pourcentage'
-                ])
+                writer.writerow(
+                    [
+                        'Symbole',
+                        'Nom',
+                        'Quantité',
+                        'Valeur marchande',
+                        'Devise',
+                        'Prix moyen',
+                        'Gain/Perte',
+                        'Pourcentage',
+                    ]
+                )
 
                 # Données
                 for pos in self.app._positions_cache:
@@ -49,16 +60,25 @@ class ExportManager:
                     name = security.get('name', 'N/A')
                     quantity = pos.get('quantity', 0)
                     market_value = pos.get('market_value', 0)
+                    currency = pos.get('currency') or self.app.base_currency
                     book_value = pos.get('book_value', 0)
                     gain_loss = market_value - book_value if market_value and book_value else 0
 
                     avg_price = book_value / quantity if quantity and book_value else 0
                     percentage = (gain_loss / book_value * 100) if book_value else 0
 
-                    writer.writerow([
-                        symbol, name, f"{quantity:.4f}", f"{market_value:.2f}",
-                        f"{avg_price:.2f}", f"{gain_loss:.2f}", f"{percentage:.2f}%"
-                    ])
+                    writer.writerow(
+                        [
+                            symbol,
+                            name,
+                            f"{quantity:.4f}",
+                            f"{market_value:.2f}",
+                            currency,
+                            f"{avg_price:.2f}",
+                            f"{gain_loss:.2f}",
+                            f"{percentage:.2f}%",
+                        ]
+                    )
 
             self.app.set_status(f"Positions exportées vers {filename}")
             # Confirmation de réussite (popup conservée)
@@ -77,7 +97,7 @@ class ExportManager:
         filename = filedialog.asksaveasfilename(
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
-            title="Exporter les activités"
+            title="Exporter les activités",
         )
 
         if not filename:
@@ -88,10 +108,18 @@ class ExportManager:
                 writer = csv.writer(csvfile)
 
                 # En-têtes
-                writer.writerow([
-                    'Date', 'Type', 'Description', 'Symbole',
-                    'Quantité', 'Montant', 'Devise', 'Statut'
-                ])
+                writer.writerow(
+                    [
+                        'Date',
+                        'Type',
+                        'Description',
+                        'Symbole',
+                        'Quantité',
+                        'Montant',
+                        'Devise',
+                        'Statut',
+                    ]
+                )
 
                 # Données
                 for act in self.app._activities_cache:
@@ -104,10 +132,18 @@ class ExportManager:
                     currency = act.get('currency', 'CAD')
                     status = act.get('status', 'N/A')
 
-                    writer.writerow([
-                        date, activity_type, description, symbol,
-                        quantity, f"{amount:.2f}", currency, status
-                    ])
+                    writer.writerow(
+                        [
+                            date,
+                            activity_type,
+                            description,
+                            symbol,
+                            quantity,
+                            f"{amount:.2f}",
+                            currency,
+                            status,
+                        ]
+                    )
 
             self.app.set_status(f"Activités exportées vers {filename}")
             messagebox.showinfo("Export réussi", f"Activités exportées vers:\n{filename}")
@@ -124,7 +160,7 @@ class ExportManager:
         filename = filedialog.asksaveasfilename(
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
-            title="Exporter les résultats de recherche"
+            title="Exporter les résultats de recherche",
         )
 
         if not filename:
@@ -135,9 +171,7 @@ class ExportManager:
                 writer = csv.writer(csvfile)
 
                 # En-têtes
-                writer.writerow([
-                    'Symbole', 'Nom', 'Bourse', 'Achetable', 'ID sécurité'
-                ])
+                writer.writerow(['Symbole', 'Nom', 'Bourse', 'Achetable', 'ID sécurité'])
 
                 # Données
                 for result in self.app._search_results:
@@ -148,9 +182,7 @@ class ExportManager:
                     buyable = "Oui" if result.get('buyable', False) else "Non"
                     security_id = result.get('id', 'N/A')
 
-                    writer.writerow([
-                        symbol, name, exchange, buyable, security_id
-                    ])
+                    writer.writerow([symbol, name, exchange, buyable, security_id])
 
             self.app.set_status(f"Résultats de recherche exportés vers {filename}")
             messagebox.showinfo("Export réussi", f"Résultats exportés vers:\n{filename}")
@@ -167,7 +199,7 @@ class ExportManager:
         filename = filedialog.asksaveasfilename(
             defaultextension=".txt",
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
-            title="Générer rapport de portefeuille"
+            title="Générer rapport de portefeuille",
         )
 
         if not filename:
@@ -201,17 +233,24 @@ class ExportManager:
                     name = security.get('name', 'N/A')
                     quantity = pos.get('quantity', 0)
                     market_value = pos.get('market_value', 0)
+                    currency = pos.get('currency', 'CAD')
 
                     f.write(f"• {symbol} - {name}\n")
                     f.write(f"  Quantité: {quantity:.4f}\n")
-                    f.write(f"  Valeur: ${market_value:.2f}\n\n")
+                    f.write(
+                        f"  Valeur: {format_money(market_value, currency, with_symbol=False)}\n\n"
+                    )
 
                     total_value += market_value
 
-                f.write(f"VALEUR TOTALE DU PORTEFEUILLE: ${total_value:.2f}\n")
+                f.write(
+                    f"VALEUR TOTALE DU PORTEFEUILLE: {format_money(total_value, self.app.base_currency, with_symbol=False)}\n"
+                )
 
             self.app.set_status(f"Rapport généré: {filename}")
-            messagebox.showinfo("Rapport généré", f"Rapport de portefeuille sauvegardé:\n{filename}")
+            messagebox.showinfo(
+                "Rapport généré", f"Rapport de portefeuille sauvegardé:\n{filename}"
+            )
 
         except Exception as e:
             self.app.set_status("Erreur génération rapport", error=True, details=repr(e))

@@ -1,35 +1,182 @@
 {
-  "version": "2.0.0",
-  "tasks": [
-    {
-      "label": "Run GUI",
-      "type": "shell",
-      "command": "python",
-      "args": ["gui.py"],
-      "group": "none",
-      "problemMatcher": []
-    },
-    {
-      "label": "Run CLI: accounts",
-      "type": "shell",
-      "command": "python",
-      "args": ["run_ws.py", "accounts"],
-      "group": "none",
-      "problemMatcher": []
-    },
-    {
-      "label": "Lint (flake8)",
-      "type": "shell",
-      "command": "flake8",
-      "args": ["."]
-    },
-    {
-      "label": "Tests (pytest)",
-      "type": "shell",
-      "command": "python",
-      "args": ["-m", "pytest", "-q"],
-      "group": "test",
-  "problemMatcher": ["$python"]
-    }
-  ]
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run GUI",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"gui.py"
+			],
+			"group": "none",
+			"problemMatcher": []
+		},
+		{
+			"label": "Run CLI: accounts",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"run_ws.py",
+				"accounts"
+			],
+			"group": "none",
+			"problemMatcher": []
+		},
+		{
+			"label": "Lint (flake8)",
+			"type": "shell",
+			"command": "flake8",
+			"args": [
+				"."
+			]
+		},
+		{
+			"label": "Tests (pytest)",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"pytest",
+				"-q"
+			],
+			"group": "test",
+			"problemMatcher": [
+				"$python"
+			]
+		},
+		{
+			"label": "Lint (flake8)",
+			"type": "shell",
+			"command": "flake8",
+			"args": [
+				"."
+			]
+		},
+		{
+			"label": "Lint (flake8 with config)",
+			"type": "shell",
+			"command": "flake8",
+			"args": [
+				"--config",
+				".flake8",
+				"."
+			]
+		},
+		{
+			"label": "Lint (flake8 cfg)",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"flake8",
+				"--config",
+				".flake8",
+				"."
+			]
+		},
+		{
+			"label": "Lint (ruff)",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"ruff",
+				"check",
+				"."
+			],
+			"problemMatcher": [
+				"$python"
+			]
+		},
+		{
+			"label": "Lint (ruff --fix)",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"ruff",
+				"check",
+				"--fix",
+				"."
+			],
+			"problemMatcher": [
+				"$python"
+			]
+		},
+		{
+			"label": "Tests (pytest)",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"pytest",
+				"-q"
+			]
+		},
+		{
+			"label": "Lint (ruff)",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"ruff",
+				"check",
+				"."
+			]
+		},
+		{
+			"label": "Tests (pytest)",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"pytest",
+				"-q"
+			],
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Pre-commit quick run",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-NonInteractive",
+				"-Command",
+				"pre-commit run --all-files"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "none"
+		},
+		{
+			"label": "Pre-commit quick run",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-NonInteractive",
+				"-Command",
+				"pre-commit run --all-files"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "none"
+		},
+		{
+			"label": "Pre-commit quick run",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-NonInteractive",
+				"-Command",
+				"pre-commit run --all-files"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "none"
+		}
+	]
 }

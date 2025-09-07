@@ -5,6 +5,7 @@ Exécution:
 
 La classe principale WSApp est définie dans wsapp_gui.app.
 """
+
 from wsapp_gui import WSApp
 
 

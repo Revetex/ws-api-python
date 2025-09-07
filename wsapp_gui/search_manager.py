@@ -1,6 +1,7 @@
 """Module de gestion de la recherche de titres pour l'application Wealthsimple."""
 
 from __future__ import annotations
+
 import threading
 from typing import TYPE_CHECKING
 
@@ -55,12 +56,7 @@ class SearchManager:
             exchange = stock.get('primaryExchange', 'N/A')
             buyable = "Oui" if result.get('buyable', False) else "Non"
 
-            self.app.tree_search.insert('', 'end', values=(
-                symbol,
-                name,
-                exchange,
-                buyable
-            ))
+            self.app.tree_search.insert('', 'end', values=(symbol, name, exchange, buyable))
 
     def open_search_security_details(self) -> None:
         """Ouvre les détails d'un titre sélectionné dans les résultats de recherche."""
@@ -111,7 +107,7 @@ class SearchManager:
             f"Nom: {name}",
             f"Bourse: {exchange}",
             f"Achetable: {'Oui' if security.get('buyable', False) else 'Non'}",
-            ""
+            "",
         ]
 
         if quote_info:
@@ -120,14 +116,16 @@ class SearchManager:
             ask = quote_info.get('ask', 'N/A')
             volume = quote_info.get('volume', 'N/A')
 
-            details.extend([
-                "--- Cotation ---",
-                f"Dernier prix: {last_price}",
-                f"Offre: {bid}",
-                f"Demande: {ask}",
-                f"Volume: {volume}",
-                ""
-            ])
+            details.extend(
+                [
+                    "--- Cotation ---",
+                    f"Dernier prix: {last_price}",
+                    f"Offre: {bid}",
+                    f"Demande: {ask}",
+                    f"Volume: {volume}",
+                    "",
+                ]
+            )
 
         return "\n".join(details)
 

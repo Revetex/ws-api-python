@@ -9,7 +9,12 @@ INCLUDE_DIRS = [
 ]
 
 EXCLUDE = {
-    '.venv', 'venv', '__pycache__', 'build', 'dist', '.git',
+    '.venv',
+    'venv',
+    '__pycache__',
+    'build',
+    'dist',
+    '.git',
 }
 
 

@@ -19,10 +19,13 @@ Notes:
 - States: CLOSED -> OPEN -> HALF_OPEN -> CLOSED.
 - On OPEN: short-circuit by raising CircuitOpenError.
 """
+
 from __future__ import annotations
-import time
+
 import threading
-from typing import Any, Callable, Coroutine, TypeVar
+import time
+from collections.abc import Coroutine
+from typing import Any, Callable, TypeVar
 
 T = TypeVar('T')
 
@@ -56,7 +59,8 @@ class CircuitBreaker:
         # logging toggle (opt-in via env)
         try:
             import os
-            self._log = (os.getenv('CB_LOG', '0').strip().lower() in ('1', 'true', 'yes', 'on'))
+
+            self._log = os.getenv('CB_LOG', '0').strip().lower() in ('1', 'true', 'yes', 'on')
         except Exception:
             self._log = False
 
@@ -105,7 +109,7 @@ class CircuitBreaker:
                 print(f"[cb] {self.name} -> OPEN (threshold)")
 
     # -------- context managers --------
-    def __enter__(self) -> 'CircuitBreaker':
+    def __enter__(self) -> CircuitBreaker:
         with self._lock:
             if not self._can_pass():
                 raise CircuitOpenError(f"Circuit '{self.name}' is OPEN")
@@ -120,7 +124,7 @@ class CircuitBreaker:
             else:
                 self._on_failure()
 
-    async def __aenter__(self) -> 'CircuitBreaker':
+    async def __aenter__(self) -> CircuitBreaker:
         return self.__enter__()
 
     async def __aexit__(self, exc_type, exc, tb) -> None:  # type: ignore[override]
@@ -131,12 +135,16 @@ class CircuitBreaker:
         def wrapper(*args: Any, **kwargs: Any) -> T:
             with self:
                 return fn(*args, **kwargs)
+
         return wrapper
 
-    def decorate_async(self, fn: Callable[..., Coroutine[Any, Any, T]]) -> Callable[..., Coroutine[Any, Any, T]]:
+    def decorate_async(
+        self, fn: Callable[..., Coroutine[Any, Any, T]]
+    ) -> Callable[..., Coroutine[Any, Any, T]]:
         async def wrapper(*args: Any, **kwargs: Any) -> T:
             async with self:
                 return await fn(*args, **kwargs)
+
         return wrapper
 
     # -------- inspection --------

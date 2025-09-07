@@ -1,16 +1,20 @@
 from __future__ import annotations
-from typing import Dict, List, Sequence
+
+from collections.abc import Sequence
+
 from .strategies import Signal
 
 
-def run_signals_backtest(closes: Sequence[float], signals: List[Signal], initial_cash: float = 10000.0) -> Dict:
+def run_signals_backtest(
+    closes: Sequence[float], signals: list[Signal], initial_cash: float = 10000.0
+) -> dict:
     """Very simple backtest: enter/exit full position on buy/sell signals at close prices.
 
     - Long-only, no fees/slippage. If multiple signals occur, process in order.
     """
     cash = float(initial_cash)
     qty = 0.0
-    equity_curve: List[float] = []
+    equity_curve: list[float] = []
     sig_idx = 0
     sigs_sorted = sorted(signals, key=lambda s: s.index)
     for i, close in enumerate(closes):
@@ -39,4 +43,30 @@ def run_signals_backtest(closes: Sequence[float], signals: List[Signal], initial
     }
 
 
-__all__ = ['run_signals_backtest']
+def quick_backtest(
+    closes: Sequence[float],
+    signals: Sequence[Signal | tuple[int, str] | dict],
+    initial_cash: float = 10000.0,
+) -> dict:
+    """Simplified backtest wrapper.
+
+    Accepts signals as:
+      - Signal objects
+      - (index, kind) tuples
+      - dicts with keys {index, kind}
+    """
+    norm_signals: list[Signal] = []
+    for s in signals:
+        if isinstance(s, Signal):
+            norm_signals.append(s)
+        elif isinstance(s, tuple) and len(s) == 2:
+            idx, kind = s
+            norm_signals.append(Signal(int(idx), str(kind), reason=f"tuple({idx},{kind})"))
+        elif isinstance(s, dict) and 'index' in s and 'kind' in s:
+            norm_signals.append(
+                Signal(int(s['index']), str(s['kind']), reason=s.get('reason') or 'dict')
+            )
+    return run_signals_backtest(closes, norm_signals, initial_cash)
+
+
+__all__ = ['run_signals_backtest', 'quick_backtest']

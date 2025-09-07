@@ -21,18 +21,19 @@ Examples:
   python run_ws.py search XEQT
   python run_ws.py quotes --id sec-s-xeqt --range 1m
 """
+
 from __future__ import annotations
+
 import argparse
 import json
-from pathlib import Path
-from typing import Optional, Dict
 import sys
+from pathlib import Path
 
 from ws_api import (
+    ManualLoginRequired,
+    OTPRequiredException,
     WealthsimpleAPI,
     WSAPISession,
-    OTPRequiredException,
-    ManualLoginRequired,
 )
 
 ROOT = Path(__file__).parent
@@ -40,7 +41,7 @@ ENV_FILE = ROOT / ".env"
 SESSION_FILE = ROOT / "session.json"
 
 
-def load_env() -> Dict[str, str]:
+def load_env() -> dict[str, str]:
     data = {}
     if not ENV_FILE.exists():
         return data
@@ -53,16 +54,13 @@ def load_env() -> Dict[str, str]:
         key, value = line.split('=', 1)
         raw = value.strip()
         # Remove surrounding quotes if present
-        if (
-            (raw.startswith('"') and '"' in raw[1:]) or
-            (raw.startswith("'") and "'" in raw[1:])
-        ):
+        if (raw.startswith('"') and '"' in raw[1:]) or (raw.startswith("'") and "'" in raw[1:]):
             quote = raw[0]
             # find matching closing quote
             closing = raw.find(quote, 1)
             if closing != -1:
                 core = raw[1:closing]
-                trailing = raw[closing+1:].lstrip()
+                trailing = raw[closing + 1 :].lstrip()
                 # Ignore inline comment after closing quote
                 if trailing.startswith('#'):
                     raw = core
@@ -78,7 +76,7 @@ def load_env() -> Dict[str, str]:
     return data
 
 
-def load_session() -> Optional[WSAPISession]:
+def load_session() -> WSAPISession | None:
     if not SESSION_FILE.exists():
         return None
     try:
@@ -89,19 +87,17 @@ def load_session() -> Optional[WSAPISession]:
 
 def save_session(
     json_str: str,
-    username: Optional[str] = None,  # username ignored
+    username: str | None = None,  # username ignored
 ):
     SESSION_FILE.write_text(json_str, encoding="utf-8")
 
 
-def get_api(cli_otp: Optional[str] = None) -> WealthsimpleAPI:
+def get_api(cli_otp: str | None = None) -> WealthsimpleAPI:
     env = load_env()
     sess = load_session()
     if sess:
         try:
-            return WealthsimpleAPI.from_token(
-                sess, persist_session_fct=save_session
-            )
+            return WealthsimpleAPI.from_token(sess, persist_session_fct=save_session)
         except ManualLoginRequired:
             sess = None
 
@@ -111,8 +107,7 @@ def get_api(cli_otp: Optional[str] = None) -> WealthsimpleAPI:
         otp = cli_otp or env.get('WS_OTP')
         if not user or not pwd:
             print(
-                "Credentials missing. Provide WS_USERNAME and WS_PASSWORD in "
-                ".env file.",
+                "Credentials missing. Provide WS_USERNAME and WS_PASSWORD in " ".env file.",
                 file=sys.stderr,
             )
             sys.exit(2)
@@ -152,19 +147,25 @@ def get_api(cli_otp: Optional[str] = None) -> WealthsimpleAPI:
 
 # ---- Command handlers ----
 
+
 def cmd_accounts(api: WealthsimpleAPI, args):
     accounts = api.get_accounts(open_only=not args.all)
     for acc in accounts:
-        print(json.dumps({
-            'id': acc['id'],
-            'number': acc['number'],
-            'description': acc['description'],
-            'status': acc['status'],
-            'currency': acc['currency'],
-        }, ensure_ascii=False))
+        print(
+            json.dumps(
+                {
+                    'id': acc['id'],
+                    'number': acc['number'],
+                    'description': acc['description'],
+                    'status': acc['status'],
+                    'currency': acc['currency'],
+                },
+                ensure_ascii=False,
+            )
+        )
 
 
-def resolve_account_id(api: WealthsimpleAPI, provided: Optional[str]) -> str:
+def resolve_account_id(api: WealthsimpleAPI, provided: str | None) -> str:
     if provided:
         return provided
     accounts = api.get_accounts()

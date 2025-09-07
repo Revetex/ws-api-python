@@ -1,23 +1,24 @@
 from __future__ import annotations
-from typing import List, Tuple, Optional
-from datetime import datetime, timedelta, timezone
+
 import threading
+from datetime import datetime, timedelta, timezone
 
 try:
     # Matplotlib imports
     import matplotlib as mpl  # type: ignore
-    from matplotlib.figure import Figure  # type: ignore
     from matplotlib.backends.backend_tkagg import (  # type: ignore
         FigureCanvasTkAgg,
         NavigationToolbar2Tk,
     )
+    from matplotlib.figure import Figure  # type: ignore
+
     # Optional date formatting
     try:
         import matplotlib.dates as mdates  # type: ignore
     except Exception:  # pragma: no cover
         mdates = None  # type: ignore
     try:
-        from matplotlib.ticker import FuncFormatter, AutoMinorLocator  # type: ignore
+        from matplotlib.ticker import AutoMinorLocator, FuncFormatter  # type: ignore
     except Exception:  # pragma: no cover
         FuncFormatter = None  # type: ignore
         AutoMinorLocator = None  # type: ignore
@@ -31,21 +32,23 @@ try:
         pass
     # Tweak rcParams for clearer charts
     try:  # pragma: no cover
-        mpl.rcParams.update({
-            'figure.dpi': 120,
-            'savefig.dpi': 220,
-            'axes.grid': True,
-            'grid.linestyle': '--',
-            'grid.alpha': 0.25,
-            'axes.spines.top': False,
-            'axes.spines.right': False,
-            'axes.titleweight': 'semibold',
-            'axes.titlesize': 11,
-            'axes.labelsize': 10,
-            'font.size': 9,
-            'lines.antialiased': True,
-            'path.simplify': True,
-        })
+        mpl.rcParams.update(
+            {
+                'figure.dpi': 120,
+                'savefig.dpi': 220,
+                'axes.grid': True,
+                'grid.linestyle': '--',
+                'grid.alpha': 0.25,
+                'axes.spines.top': False,
+                'axes.spines.right': False,
+                'axes.titleweight': 'semibold',
+                'axes.titlesize': 11,
+                'axes.labelsize': 10,
+                'font.size': 9,
+                'lines.antialiased': True,
+                'path.simplify': True,
+            }
+        )
     except Exception:
         pass
     HAS_MPL = True
@@ -59,16 +62,21 @@ except Exception:  # pragma: no cover
 class ChartController:
     def __init__(self, app):
         self.app = app
+        # Matplotlib objects (lazy-created in init_widgets)
         self.figure = None
         self.ax = None
         self.canvas = None
         self.toolbar = None
-        self._last_points = []
-        self._last_title = ''
-        # options
-        self._show_grid = True
-        self._show_sma = False
-        self._sma_window = 7
+        # Cached plot state
+        self._last_points: list[tuple[str, float]] = []
+        self._last_title: str = ''
+        # Options
+        self._show_grid: bool = True
+        self._show_sma: bool = False
+        self._sma_window: int = 7
+        # Trade/signal markers overlay
+        # Each marker: {date: 'YYYY-MM-DD', kind: 'buy'|'sell', y?: float, label?: str}
+        self._markers: list[dict] = []
 
     def init_widgets(self, parent):
         if not HAS_MPL:
@@ -121,16 +129,13 @@ class ChartController:
                     resolution=resolution,
                     first=500,
                 )
-                pts: List[Tuple[str, float]] = []
+                pts: list[tuple[str, float]] = []
                 if data:  # API returns a list of nodes already
                     for node in data:
                         if not isinstance(node, dict):
                             continue
                         date = node.get('date')
-                        nlv = (
-                            node.get('netLiquidationValueV2')
-                            or node.get('netLiquidationValue')
-                        )
+                        nlv = node.get('netLiquidationValueV2') or node.get('netLiquidationValue')
                         if date and nlv and 'amount' in nlv:
                             pts.append((date, float(nlv['amount'])))
                 # Fallback: try identity-level financials filtered by account if no points
@@ -143,7 +148,7 @@ class ChartController:
                             end_date=end,
                             first=500,
                         )
-                        for node in (id_data or []):
+                        for node in id_data or []:
                             if not isinstance(node, dict):
                                 continue
                             date = node.get('date')
@@ -156,21 +161,18 @@ class ChartController:
                 pts.sort()
                 self.app.after(
                     0,
-                    lambda: self._update_line(
-                        pts, title=f'Net Liquidation Value ({days}j)'
-                    ),
+                    lambda: self._update_line(pts, title=f'Net Liquidation Value ({days}j)'),
                 )
             except Exception as e:
                 self.app.after(
-                    0,
-                    lambda e=e: self.app.set_status(f'Erreur historique: {e}', error=True)
+                    0, lambda e=e: self.app.set_status(f'Erreur historique: {e}', error=True)
                 )
             finally:
                 self.app.after(0, lambda: self.app._busy(False))
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _update_line(self, points: List[Tuple[str, float]], title: str):
+    def _update_line(self, points: list[tuple[str, float]], title: str):
         if not HAS_MPL or not self.ax:
             return
         self.ax.clear()
@@ -180,8 +182,14 @@ class ChartController:
             xs_raw, ys = zip(*points)
             # Try to parse dates for nicer axis formatting if mpl dates available
             xs = list(xs_raw)
+            # Map of date string (YYYY-MM-DD) to index for marker alignment
+            try:
+                idx_map = {str(d)[:10]: i for i, d in enumerate(xs_raw)}
+            except Exception:
+                idx_map = {}
             try:
                 from datetime import datetime as _dt
+
                 xs_dt = []
                 for s in xs_raw:
                     try:
@@ -224,7 +232,7 @@ class ChartController:
                         alpha=0.95,
                         antialiased=True,
                     )
-                    self.ax.set_xticks(xs[:: max(1, len(xs)//8)])
+                    self.ax.set_xticks(xs[:: max(1, len(xs) // 8)])
             except Exception:
                 self.ax.plot(
                     xs,
@@ -238,7 +246,7 @@ class ChartController:
                     antialiased=True,
                 )
                 try:
-                    self.ax.set_xticks(xs[:: max(1, len(xs)//8)])
+                    self.ax.set_xticks(xs[:: max(1, len(xs) // 8)])
                 except Exception:
                     pass
             self.ax.tick_params(axis='x', rotation=26)
@@ -259,13 +267,67 @@ class ChartController:
                     sma_plot = pad + sma_vals
                     # Filter None for plotting by replacing with NaN
                     sma_plot = [float('nan') if v is None else v for v in sma_plot]
-                    self.ax.plot(xs, sma_plot, color='#059669', linewidth=1.8, alpha=0.9, label=f'SMA {self._sma_window}j')
+                    self.ax.plot(
+                        xs,
+                        sma_plot,
+                        color='#059669',
+                        linewidth=1.8,
+                        alpha=0.9,
+                        label=f'SMA {self._sma_window}j',
+                    )
                     # Guard legend only if labeled artists exist
                     handles, labels = self.ax.get_legend_handles_labels()
                     if labels:
                         self.ax.legend()
                 except Exception:
                     pass
+            # Trade/signal markers overlay (optional)
+            try:
+                if self._markers:
+                    for m in self._markers:
+                        if not isinstance(m, dict):
+                            continue
+                        kind = str(m.get('kind', 'buy')).lower()
+                        d = str(m.get('date', ''))[:10]
+                        if not d or d not in idx_map:
+                            continue
+                        i = idx_map[d]
+                        if i < 0 or i >= len(xs):
+                            continue
+                        x = xs[i]
+                        y = m.get('y')
+                        try:
+                            y = float(y) if y is not None else float(ys[i])
+                        except Exception:
+                            continue
+                        color, mark = ('#10b981', '^') if kind == 'buy' else ('#ef4444', 'v')
+                        self.ax.scatter(
+                            [x],
+                            [y],
+                            color=color,
+                            s=36,
+                            marker=mark,
+                            zorder=5,
+                            edgecolors='white',
+                            linewidth=0.5,
+                        )
+                        label = m.get('label')
+                        if label:
+                            try:
+                                self.ax.annotate(
+                                    str(label),
+                                    (x, y),
+                                    textcoords='offset points',
+                                    xytext=(0, 8 if kind == 'buy' else -10),
+                                    ha='center',
+                                    fontsize=8,
+                                    color=color,
+                                    alpha=0.9,
+                                )
+                            except Exception:
+                                pass
+            except Exception:
+                pass
         else:
             self.ax.text(
                 0.5,
@@ -296,13 +358,11 @@ class ChartController:
         if not HAS_MPL:
             self.app.set_status('Graphique: Matplotlib non disponible.', error=True)
             return
-        sel = (
-            self.app.list_accounts.curselection()
-            if hasattr(self.app, 'list_accounts')
-            else []
-        )
+        sel = self.app.list_accounts.curselection() if hasattr(self.app, 'list_accounts') else []
         if not sel:
-            self.app.set_status('Graphique: sélectionnez plusieurs comptes (ou au moins un).', error=True)
+            self.app.set_status(
+                'Graphique: sélectionnez plusieurs comptes (ou au moins un).', error=True
+            )
             return
         account_ids = [self.app.accounts[i]['id'] for i in sel]
         self.app._busy(True)
@@ -335,24 +395,21 @@ class ChartController:
                             if not isinstance(node, dict):
                                 continue
                             date = node.get('date')
-                            nlv = (
-                                node.get('netLiquidationValueV2')
-                                or node.get('netLiquidationValue')
+                            nlv = node.get('netLiquidationValueV2') or node.get(
+                                'netLiquidationValue'
                             )
                             if date and nlv and 'amount' in nlv:
-                                aggregates[date] = (
-                                    aggregates.get(date, 0.0)
-                                    + float(nlv['amount'])
-                                )
+                                aggregates[date] = aggregates.get(date, 0.0) + float(nlv['amount'])
                 pts = sorted(aggregates.items())
                 self.app.after(
                     0,
-                    lambda: self._update_line(
-                        pts, title=f'Valeur Agrégée ({days}j)'
-                    ),
+                    lambda: self._update_line(pts, title=f'Valeur Agrégée ({days}j)'),
                 )
             except Exception as e:  # noqa
-                self.app.after(0, lambda e=e: self.app.set_status(f"Graphique: {e}", error=True, details=repr(e)))
+                self.app.after(
+                    0,
+                    lambda e=e: self.app.set_status(f"Graphique: {e}", error=True, details=repr(e)),
+                )
             finally:
                 self.app.after(0, lambda: self.app._busy(False))
 
@@ -363,11 +420,7 @@ class ChartController:
         if not HAS_MPL:
             self.app.set_status('Graphique: Matplotlib non disponible.', error=True)
             return
-        sel = (
-            self.app.list_accounts.curselection()
-            if hasattr(self.app, 'list_accounts')
-            else []
-        )
+        sel = self.app.list_accounts.curselection() if hasattr(self.app, 'list_accounts') else []
         if not sel:
             self.app.set_status('Graphique: sélectionnez des comptes.', error=True)
             return
@@ -396,17 +449,19 @@ class ChartController:
                     top.append(('Autres', other))
                 self.app.after(
                     0,
-                    lambda: self._update_pie(
-                        top, 'Composition du portefeuille'
-                    ),
+                    lambda: self._update_pie(top, 'Composition du portefeuille'),
                 )
             except Exception as e:  # noqa
-                self.app.after(0, lambda e=e: self.app.set_status(f"Graphique: {e}", error=True, details=repr(e)))
+                self.app.after(
+                    0,
+                    lambda e=e: self.app.set_status(f"Graphique: {e}", error=True, details=repr(e)),
+                )
             finally:
                 self.app.after(0, lambda: self.app._busy(False))
+
         threading.Thread(target=worker, daemon=True).start()
 
-    def _update_pie(self, data: List[Tuple[str, float]], title: str):
+    def _update_pie(self, data: list[tuple[str, float]], title: str):
         if not HAS_MPL or not self.ax:
             return
         self.ax.clear()
@@ -436,7 +491,12 @@ class ChartController:
         self.canvas.draw_idle()  # type: ignore
 
     # ---- Options & helpers ----
-    def set_options(self, show_grid: Optional[bool] = None, show_sma: Optional[bool] = None, sma_window: Optional[int] = None):
+    def set_options(
+        self,
+        show_grid: bool | None = None,
+        show_sma: bool | None = None,
+        sma_window: int | None = None,
+    ):
         if show_grid is not None:
             self._show_grid = bool(show_grid)
         if show_sma is not None:
@@ -450,9 +510,22 @@ class ChartController:
         if self._last_points and self._last_title:
             self._update_line(self._last_points, self._last_title)
 
+    # ---- Markers API ----
+    def set_markers(self, markers: list[dict] | None):
+        """Set trade/signal markers and replot if data is cached.
+
+        Each marker: {date: 'YYYY-MM-DD', kind: 'buy'|'sell', y?: float, label?: str}
+        """
+        self._markers = list(markers or [])
+        self.replot()
+
+    def clear_markers(self):
+        self._markers = []
+        self.replot()
+
     @staticmethod
-    def _moving_average(values: List[float], window: int) -> List[float]:
-        out: List[float] = []
+    def _moving_average(values: list[float], window: int) -> list[float]:
+        out: list[float] = []
         acc = 0.0
         for i, v in enumerate(values):
             acc += float(v)
@@ -493,6 +566,7 @@ class ChartController:
             return False
         try:
             import csv
+
             with open(path, 'w', newline='', encoding='utf-8') as f:
                 w = csv.writer(f)
                 w.writerow(['date', 'value'])

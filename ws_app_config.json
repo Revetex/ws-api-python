@@ -6,10 +6,10 @@
     "alert": true
   },
   "window": {
-    "width": 1200,
-    "height": 800,
-    "x": 52,
-    "y": 52
+    "width": 1493,
+    "height": 862,
+    "x": 59,
+    "y": -13
   },
   "auto_login": true,
   "refresh_interval": 300000,
@@ -23,17 +23,123 @@
   },
   "ui": {
     "onboarded": true,
-    "last_tab": 0,
+    "last_tab": 2,
     "auto_refresh": {
       "enabled": true,
       "seconds": 60
     },
     "last_account_id": "tfsa-8Ub5aLeMjg",
     "charts": {
-      "period_days": 30,
+      "period_days": 365,
       "show_grid": true,
-      "show_sma": false,
+      "show_sma": true,
       "sma_window": 7
+    },
+    "tabs": {
+      "portefeuille": {
+        "index": 0
+      },
+      "analyse": {
+        "index": 0
+      },
+      "marche": {
+        "index": 0
+      },
+      "integrations": {
+        "index": 0
+      }
+    },
+    "news": {
+      "auto": false,
+      "seconds": 120
+    },
+    "movers": {
+      "auto": false,
+      "seconds": 120
+    },
+    "search": {
+      "auto": false,
+      "seconds": 180
+    },
+    "tables": {
+      "positions": {
+        "widths": {
+          "symbol": 0,
+          "name": 259,
+          "qty": 120,
+          "last": 130,
+          "value": 145,
+          "cur": 114,
+          "avg": 129,
+          "pnl": 119,
+          "pnl_abs": 139
+        }
+      },
+      "activities": {
+        "widths": {
+          "date": 328,
+          "desc": 654,
+          "amt": 283
+        }
+      },
+      "search": {
+        "widths": {
+          "symbol": 0,
+          "name": 349,
+          "exchange": 209,
+          "status": 199,
+          "buyable": 199,
+          "market": 209
+        }
+      },
+      "news": {
+        "widths": {
+          "source": 248,
+          "title": 529,
+          "publishedAt": 249,
+          "sentiment": 239
+        }
+      },
+      "gainers": {
+        "widths": {
+          "symbol": 0,
+          "pnlpct": 124,
+          "pnlabs": 139,
+          "value": 150,
+          "qty": 119
+        }
+      },
+      "losers": {
+        "widths": {
+          "symbol": 0,
+          "pnlpct": 124,
+          "pnlabs": 139,
+          "value": 150,
+          "qty": 120
+        }
+      },
+      "active": {
+        "widths": {
+          "symbol": 0,
+          "value": 149,
+          "pnlpct": 124,
+          "pnlabs": 140,
+          "qty": 119
+        }
+      },
+      "opps": {
+        "widths": {
+          "symbol": 0,
+          "pnlpct": 124,
+          "pnlabs": 139,
+          "value": 150,
+          "qty": 120
+        }
+      }
+    },
+    "font": {
+      "size": 10,
+      "family": "Calibri Light"
     }
   },
   "integrations": {
@@ -56,73 +162,84 @@
     "rsi_buy": 55,
     "rsi_sell": 45,
     "min_bandwidth": 0.03,
-    "bb_window": 20
+    "bb_window": 20,
+    "auto_window": 160
   },
   "autotrade": {
     "ledger": [
       {
-        "timestamp": 1756275492.044625,
-        "symbol": "SYM004",
-        "kind": "buy",
-        "index": 4
-      },
-      {
-        "timestamp": 1756275492.0446267,
-        "symbol": "SYM006",
-        "kind": "buy",
-        "index": 6
-      },
-      {
-        "timestamp": 1756275492.0446272,
-        "symbol": "SYM007",
-        "kind": "buy",
-        "index": 7
-      },
-      {
-        "timestamp": 1756275492.044628,
-        "symbol": "SYM008",
-        "kind": "buy",
-        "index": 8
-      },
-      {
-        "timestamp": 1756275492.0446281,
+        "timestamp": 1757268270.539482,
         "symbol": "SYM009",
         "kind": "buy",
         "index": 9
       },
       {
-        "timestamp": 1756275492.0446296,
-        "symbol": "SYM003",
+        "timestamp": 1757268270.5394862,
+        "symbol": "SYM005",
         "kind": "buy",
-        "index": 3
+        "index": 5
       },
       {
-        "timestamp": 1756275492.0446305,
-        "symbol": "SYM000",
+        "timestamp": 1757268270.5394878,
+        "symbol": "SYM008",
         "kind": "buy",
-        "index": 0
+        "index": 8
       },
       {
-        "timestamp": 1756275492.044631,
-        "symbol": "SYM001",
+        "timestamp": 1757268270.5394897,
+        "symbol": "SYM007",
         "kind": "buy",
-        "index": 1
+        "index": 7
       },
       {
-        "timestamp": 1756275492.0446317,
+        "timestamp": 1757268270.5394907,
+        "symbol": "SYM006",
+        "kind": "buy",
+        "index": 6
+      },
+      {
+        "timestamp": 1757268270.5394933,
         "symbol": "SYM002",
         "kind": "buy",
         "index": 2
       },
       {
-        "timestamp": 1756275492.0446332,
-        "symbol": "SYM005",
+        "timestamp": 1757268270.5394952,
+        "symbol": "SYM001",
         "kind": "buy",
-        "index": 5
+        "index": 1
+      },
+      {
+        "timestamp": 1757268270.5394964,
+        "symbol": "SYM003",
+        "kind": "buy",
+        "index": 3
+      },
+      {
+        "timestamp": 1757268270.5394976,
+        "symbol": "SYM004",
+        "kind": "buy",
+        "index": 4
+      },
+      {
+        "timestamp": 1757268270.5394995,
+        "symbol": "SYM000",
+        "kind": "buy",
+        "index": 0
       }
-    ]
+    ],
+    "enabled": true,
+    "mode": "live",
+    "base_size": 1000.0,
+    "max_trades_per_day": 5,
+    "max_position_notional_per_symbol": 0.0,
+    "max_position_qty_per_symbol": 0.0
   },
   "ai": {
     "enhanced": false
+  },
+  "media": {
+    "cache_ttl_sec": 3600,
+    "detail_logo_px": 64
   }
 }

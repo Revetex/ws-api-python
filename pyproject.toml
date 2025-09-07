@@ -1,13 +1,15 @@
 [tool.black]
 line-length = 100
 skip-string-normalization = true
-exclude = [
-  "^\\.venv/",
-  "^venv/",
-  "^build/",
-  "^dist/",
-  "^WS_API\\.egg-info/",
-]
+# Black expects a single regex string for exclude; use a standard multi-line regex.
+exclude = '''
+/(
+    \\.(venv|venv)
+  | build
+  | dist
+  | WS_API\\.egg-info
+)
+/'''
 
 [tool.ruff]
 line-length = 100

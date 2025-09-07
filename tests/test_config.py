@@ -67,7 +67,10 @@ def test_persist_telegram_and_chart_prefs(tmp_path):
 def test_default_merge_is_non_destructive(tmp_path):
     cfg_path = tmp_path / 'cfg.json'
     # Pre-write a partial config with custom nested values
-    cfg_path.write_text('{"integrations": {"telegram": {"enabled": true, "tech_format": "emoji-rich"}}, "notifications": {"info": true}}', encoding='utf-8')
+    cfg_path.write_text(
+        '{"integrations": {"telegram": {"enabled": true, "tech_format": "emoji-rich"}}, "notifications": {"info": true}}',
+        encoding='utf-8',
+    )
 
     appcfg = AppConfig(str(cfg_path))
     # Ensure defaults added but existing preserved

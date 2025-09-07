@@ -1,9 +1,16 @@
 from __future__ import annotations
+
 import threading
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Callable
 
 try:
-    from analytics.strategies import MovingAverageCrossStrategy, RSIReversionStrategy, ConfluenceStrategy
+    from analytics.strategies import (
+        ConfluenceStrategy,
+        MovingAverageCrossStrategy,
+        RSIReversionStrategy,
+    )
+
     HAS_ANALYTICS = True
 except Exception:  # pragma: no cover
     HAS_ANALYTICS = False
@@ -15,15 +22,24 @@ class StrategyRunner:
     Configurable via set_config(); safe no-ops if analytics/APIs are unavailable.
     """
 
-    def __init__(self, api_manager, get_universe: Callable[[], Sequence[str]], send_alert: Callable[[str, str, str], bool], trade_executor=None):
+    def __init__(
+        self,
+        api_manager,
+        get_universe: Callable[[], Sequence[str]],
+        send_alert: Callable[[str, str, str], bool],
+        trade_executor=None,
+        on_signal=None,
+    ):
         self.api = api_manager
         self.get_universe = get_universe
         self.send_alert = send_alert
         self.trade_executor = trade_executor
+        # Optional UI callback: on_signal(symbol: str, signal: Any) -> None
+        self.on_signal = on_signal
         self.enabled = False
         self.interval_sec = 300
         self.strategy = 'ma_cross'  # 'ma_cross' | 'rsi_reversion' | 'confluence'
-        self.params: Dict[str, float] = {
+        self.params: dict[str, float] = {
             "fast": 10,
             "slow": 30,
             "rsi_low": 30,
@@ -32,12 +48,22 @@ class StrategyRunner:
             "rsi_buy": 55,
             "rsi_sell": 45,
         }
-        self._thr: Optional[threading.Thread] = None
+        self._thr: threading.Thread | None = None
         self._stop = threading.Event()
-        self._last_signals: Dict[Tuple[str, str], int] = {}  # (symbol, kind) -> last index processed
+        # (symbol, kind) -> last index processed
+        self._last_signals: dict[tuple[str, str], int] = {}
         self._last_report: str = ''
+        # Keep a compact rolling window of last emitted signals for UI/tooltips
+        self._recent: list[tuple[str, str, int, str]] = []  # (symbol, kind, index, reason)
+        self._recent_max = 64
 
-    def set_config(self, enabled: bool = None, interval_sec: int = None, strategy: str = None, params: Dict[str, float] = None):
+    def set_config(
+        self,
+        enabled: bool = None,
+        interval_sec: int = None,
+        strategy: str = None,
+        params: dict[str, float] = None,
+    ):
         if enabled is not None:
             self.enabled = bool(enabled)
         if interval_sec is not None:
@@ -92,6 +118,16 @@ class StrategyRunner:
                             self.trade_executor.on_signal(sym, s)
                     except Exception:
                         pass
+                    # optional UI callback
+                    try:
+                        if self.on_signal is not None:
+                            self.on_signal(sym, s)
+                    except Exception:
+                        pass
+                    # track recent
+                    self._recent.append((sym, s.kind, s.index, s.reason))
+                    if len(self._recent) > self._recent_max:
+                        self._recent = self._recent[-self._recent_max :]
                     self._last_signals[key] = last_index
                     if s.kind == 'buy':
                         buys += 1
@@ -111,6 +147,13 @@ class StrategyRunner:
 
     def last_report(self) -> str:
         return self._last_report
+
+    def recent_signals(self) -> list[tuple[str, str, int, str]]:
+        """Return a copy of the most recent emitted signals.
+
+        Each tuple: (symbol, kind, index, reason)
+        """
+        return list(self._recent)
 
     # ---------------- internal ----------------
     def _loop(self):
@@ -139,7 +182,11 @@ class StrategyRunner:
             rb = int(self.params.get('rsi_buy', 55))
             rs = int(self.params.get('rsi_sell', 45))
             s = ConfluenceStrategy(
-                fast, slow, rp, rb, rs,
+                fast,
+                slow,
+                rp,
+                rb,
+                rs,
                 float(self.params.get('min_bandwidth', 0.0) or 0.0),
                 int(self.params.get('bb_window', 20) or 20),
             )
@@ -148,15 +195,16 @@ class StrategyRunner:
         fast = int(self.params.get('fast', 10))
         slow = int(self.params.get('slow', 30))
         s = MovingAverageCrossStrategy(
-            fast, slow,
+            fast,
+            slow,
             float(self.params.get('min_bandwidth', 0.0) or 0.0),
             int(self.params.get('bb_window', 20) or 20),
         )
         return s.generate(closes)
 
     @staticmethod
-    def _extract_closes(series: Dict) -> List[float]:
-        closes: List[float] = []
+    def _extract_closes(series: dict) -> list[float]:
+        closes: list[float] = []
         try:
             k = next((k for k in series.keys() if 'Time Series' in k), None)
             ts = series.get(k) if k else None
@@ -172,4 +220,3 @@ class StrategyRunner:
 
 
 __all__ = ["StrategyRunner"]
-

@@ -5,35 +5,54 @@ Includes:
 - Alpha Vantage for additional market data
 - Telegram Bot for notifications
 """
+
 from __future__ import annotations
+
+import json
 import os
-import requests
-from typing import List, Dict, Optional, Tuple
-from datetime import datetime
-import time
 import random
 import threading
+import time
+from datetime import datetime
+
+import requests
 
 
 class NewsAPIClient:
     """Client for NewsAPI.org - financial news and sentiment."""
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: str | None = None):
         self.api_key = api_key or os.getenv('NEWS_API_KEY')
         self.base_url = 'https://newsapi.org/v2'
         # pooled HTTP client
         try:
             from utils.http_client import HTTPClient  # type: ignore
+
             self._http = HTTPClient(headers={'Accept': 'application/json'})
         except Exception:
             self._http = None  # type: ignore
         # opt-in flag to force HTTPClient exclusively (keeps compatibility by default)
         try:
-            self._http_only = (os.getenv('WSAPP_HTTPCLIENT_ONLY', '0').strip().lower() in ('1', 'true', 'yes', 'on'))
+            self._http_only = os.getenv('WSAPP_HTTPCLIENT_ONLY', '0').strip().lower() in (
+                '1',
+                'true',
+                'yes',
+                'on',
+            )
         except Exception:
             self._http_only = False
+        # optional error logging (off by default to avoid console spam when offline)
+        try:
+            self._log_errors = os.getenv('NEWS_LOG_ERRORS', '0').strip().lower() in (
+                '1',
+                'true',
+                'yes',
+                'on',
+            )
+        except Exception:
+            self._log_errors = False
         # tiny cache with negative TTL support
-        self._cache: Dict[Tuple[str, int], Tuple[float, List[Dict], bool]] = {}
+        self._cache: dict[tuple[str, int], tuple[float, list[dict], bool]] = {}
         self._ttl = 180.0
         self._neg_ttl = 30.0
         # optional persistent cache from APIManager; will be injected post-init if available
@@ -46,6 +65,7 @@ class NewsAPIClient:
         # Optional circuit breaker
         try:
             from utils.circuit_breaker import CircuitBreaker  # type: ignore
+
             self._cb = CircuitBreaker(
                 name='newsapi',
                 failure_threshold=int(os.getenv('NEWS_CB_FAILURES', '5') or '5'),
@@ -55,7 +75,7 @@ class NewsAPIClient:
         except Exception:
             self._cb = None  # type: ignore
 
-    def breaker_stats(self) -> Dict:
+    def breaker_stats(self) -> dict:
         try:
             if getattr(self, '_cb', None):
                 return self._cb.stats()  # type: ignore[attr-defined]
@@ -63,7 +83,7 @@ class NewsAPIClient:
             pass
         return {}
 
-    def get_financial_news(self, query: str = 'stock market', page_size: int = 10) -> List[Dict]:
+    def get_financial_news(self, query: str = 'stock market', page_size: int = 10) -> list[dict]:
         """Get financial news articles."""
         if not self.api_key:
             return []
@@ -73,7 +93,9 @@ class NewsAPIClient:
             try:
                 if getattr(self, '_persistent_cache', None):
                     k = f"{query}|{int(page_size)}"
-                    cached = self._persistent_cache.get_if_fresh('news', k, max_age_s=self._persist_ttl)
+                    cached = self._persistent_cache.get_if_fresh(
+                        'news', k, max_age_s=self._persist_ttl
+                    )
                     if isinstance(cached, list) and cached:
                         return cached
             except Exception:
@@ -85,7 +107,7 @@ class NewsAPIClient:
                 'language': 'en',
                 'sortBy': 'publishedAt',
                 'pageSize': page_size,
-                'apiKey': self.api_key
+                'apiKey': self.api_key,
             }
             now = time.time()
             key = (query, page_size)
@@ -97,6 +119,7 @@ class NewsAPIClient:
                     return data
             if getattr(self, '_cb', None):
                 from utils.circuit_breaker import CircuitOpenError  # type: ignore
+
                 try:
                     with self._cb:  # type: ignore[attr-defined]
                         if getattr(self, '_http', None) is not None:
@@ -126,7 +149,8 @@ class NewsAPIClient:
                 pass
             return articles
         except Exception as e:
-            print(f"News API error: {e}")
+            if getattr(self, '_log_errors', False):
+                print(f"News API error: {e}")
             # cache empty to avoid hammering API momentarily
             try:
                 now = time.time()
@@ -136,7 +160,7 @@ class NewsAPIClient:
                 pass
             return []
 
-    def get_company_news(self, symbol: str, page_size: int = 5) -> List[Dict]:
+    def get_company_news(self, symbol: str, page_size: int = 5) -> list[dict]:
         """Get news for specific company/stock symbol."""
         return self.get_financial_news(f"{symbol} stock", page_size)
 
@@ -144,21 +168,28 @@ class NewsAPIClient:
 class AlphaVantageClient:
     """Client for Alpha Vantage - market data and indicators."""
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: str | None = None):
         self.api_key = api_key or os.getenv('ALPHA_VANTAGE_KEY')
         self.base_url = 'https://www.alphavantage.co/query'
         try:
             from utils.http_client import HTTPClient  # type: ignore
+
             self._http = HTTPClient(headers={'Accept': 'application/json'})
         except Exception:
             self._http = None  # type: ignore
         try:
-            self._http_only = (os.getenv('WSAPP_HTTPCLIENT_ONLY', '0').strip().lower() in ('1', 'true', 'yes', 'on'))
+            self._http_only = os.getenv('WSAPP_HTTPCLIENT_ONLY', '0').strip().lower() in (
+                '1',
+                'true',
+                'yes',
+                'on',
+            )
         except Exception:
             self._http_only = False
         # Optional circuit breaker
         try:
             from utils.circuit_breaker import CircuitBreaker  # type: ignore
+
             self._cb = CircuitBreaker(
                 name='alpha_vantage',
                 failure_threshold=int(os.getenv('ALPHA_CB_FAILURES', '5') or '5'),
@@ -167,8 +198,18 @@ class AlphaVantageClient:
             )
         except Exception:
             self._cb = None  # type: ignore
+        # optional error logging (off by default)
+        try:
+            self._log_errors = os.getenv('ALPHA_LOG_ERRORS', '0').strip().lower() in (
+                '1',
+                'true',
+                'yes',
+                'on',
+            )
+        except Exception:
+            self._log_errors = False
 
-    def breaker_stats(self) -> Dict:
+    def breaker_stats(self) -> dict:
         try:
             if getattr(self, '_cb', None):
                 return self._cb.stats()  # type: ignore[attr-defined]
@@ -176,19 +217,16 @@ class AlphaVantageClient:
             pass
         return {}
 
-    def get_quote(self, symbol: str) -> Optional[Dict]:
+    def get_quote(self, symbol: str) -> dict | None:
         """Get real-time quote for symbol."""
         if not self.api_key:
             return None
 
         try:
-            params = {
-                'function': 'GLOBAL_QUOTE',
-                'symbol': symbol,
-                'apikey': self.api_key
-            }
+            params = {'function': 'GLOBAL_QUOTE', 'symbol': symbol, 'apikey': self.api_key}
             if getattr(self, '_cb', None):
                 from utils.circuit_breaker import CircuitOpenError  # type: ignore
+
                 try:
                     with self._cb:  # type: ignore[attr-defined]
                         if getattr(self, '_http', None) is not None:
@@ -210,10 +248,11 @@ class AlphaVantageClient:
             data = response.json()
             return data.get('Global Quote', {})
         except Exception as e:
-            print(f"Alpha Vantage error: {e}")
+            if getattr(self, '_log_errors', False):
+                print(f"Alpha Vantage error: {e}")
             return None
 
-    def get_intraday(self, symbol: str, interval: str = '5min') -> Optional[Dict]:
+    def get_intraday(self, symbol: str, interval: str = '5min') -> dict | None:
         """Get intraday data for symbol."""
         if not self.api_key:
             return None
@@ -223,10 +262,11 @@ class AlphaVantageClient:
                 'function': 'TIME_SERIES_INTRADAY',
                 'symbol': symbol,
                 'interval': interval,
-                'apikey': self.api_key
+                'apikey': self.api_key,
             }
             if getattr(self, '_cb', None):
                 from utils.circuit_breaker import CircuitOpenError  # type: ignore
+
                 try:
                     with self._cb:  # type: ignore[attr-defined]
                         if getattr(self, '_http', None) is not None:
@@ -247,10 +287,13 @@ class AlphaVantageClient:
             response.raise_for_status()
             return response.json()
         except Exception as e:
-            print(f"Alpha Vantage intraday error: {e}")
+            if getattr(self, '_log_errors', False):
+                print(f"Alpha Vantage intraday error: {e}")
             return None
 
-    def get_time_series(self, symbol: str, interval: str = '1day', outputsize: str = 'compact') -> Optional[Dict]:
+    def get_time_series(
+        self, symbol: str, interval: str = '1day', outputsize: str = 'compact'
+    ) -> dict | None:
         """Get time series for symbol for various intervals.
 
         interval values supported:
@@ -264,16 +307,25 @@ class AlphaVantageClient:
 
         try:
             func = None
-            params: Dict[str, str] = {
+            params: dict[str, str] = {
                 'symbol': symbol,
                 'apikey': self.api_key,
                 'datatype': 'json',
             }
 
-            intraday_map = {'1min': '1min', '5min': '5min', '15min': '15min', '30min': '30min', '60min': '60min', '1hour': '60min'}
+            intraday_map = {
+                '1min': '1min',
+                '5min': '5min',
+                '15min': '15min',
+                '30min': '30min',
+                '60min': '60min',
+                '1hour': '60min',
+            }
             if interval in intraday_map:
                 func = 'TIME_SERIES_INTRADAY'
-                params.update({'function': func, 'interval': intraday_map[interval], 'outputsize': outputsize})
+                params.update(
+                    {'function': func, 'interval': intraday_map[interval], 'outputsize': outputsize}
+                )
             elif interval == '1day':
                 func = 'TIME_SERIES_DAILY'
                 params.update({'function': func, 'outputsize': outputsize})
@@ -290,6 +342,7 @@ class AlphaVantageClient:
 
             if getattr(self, '_cb', None):
                 from utils.circuit_breaker import CircuitOpenError  # type: ignore
+
                 try:
                     with self._cb:  # type: ignore[attr-defined]
                         if getattr(self, '_http', None) is not None:
@@ -310,10 +363,13 @@ class AlphaVantageClient:
             response.raise_for_status()
             return response.json()
         except Exception as e:
-            print(f"Alpha Vantage time series error: {e}")
+            if getattr(self, '_log_errors', False):
+                print(f"Alpha Vantage time series error: {e}")
             return None
 
-    def get_technical_indicators(self, symbol: str, indicator: str = 'RSI', interval: str = 'daily') -> Optional[Dict]:
+    def get_technical_indicators(
+        self, symbol: str, indicator: str = 'RSI', interval: str = 'daily'
+    ) -> dict | None:
         """Get technical indicators (RSI, MACD, etc.)."""
         if not self.api_key:
             return None
@@ -325,13 +381,19 @@ class AlphaVantageClient:
                 'interval': interval,
                 'time_period': 14,
                 'series_type': 'close',
-                'apikey': self.api_key
+                'apikey': self.api_key,
             }
-            response = requests.get(self.base_url, params=params, timeout=10)
+            if getattr(self, '_http', None) is not None:
+                response = self._http.get(self.base_url, params=params)  # type: ignore[assignment]
+            elif not getattr(self, '_http_only', False):
+                response = requests.get(self.base_url, params=params, timeout=10)
+            else:
+                raise RuntimeError('HTTP client unavailable')
             response.raise_for_status()
             return response.json()
         except Exception as e:
-            print(f"Alpha Vantage indicators error: {e}")
+            if getattr(self, '_log_errors', False):
+                print(f"Alpha Vantage indicators error: {e}")
             return None
 
 
@@ -344,33 +406,54 @@ class YahooFinanceClient:
     def __init__(self):
         # Shared HTTP session with friendly headers (kept for compatibility with tests)
         self._session = requests.Session()
-        self._session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Connection': 'keep-alive',
-        })
+        self._session.headers.update(
+            {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Connection': 'keep-alive',
+            }
+        )
         # Optional pooled HTTP client for future migration
         try:
             from utils.http_client import HTTPClient  # type: ignore
+
             self._http = HTTPClient(headers=dict(self._session.headers))
         except Exception:
             self._http = None  # type: ignore
         # opt-in flag to force HTTPClient exclusively; default False to keep tests patching _session working
         try:
-            self._http_only = (os.getenv('WSAPP_HTTPCLIENT_ONLY', '0').strip().lower() in ('1', 'true', 'yes', 'on'))
+            self._http_only = os.getenv('WSAPP_HTTPCLIENT_ONLY', '0').strip().lower() in (
+                '1',
+                'true',
+                'yes',
+                'on',
+            )
         except Exception:
             self._http_only = False
 
         # Simple in-memory caches to avoid hammering endpoints
         # quote cache: key=(symbol)
         # series cache: key=(symbol, interval, outputsize)
-        self._quote_cache: Dict[str, Tuple[float, Dict, bool]] = {}
-        self._series_cache: Dict[Tuple[str, str, str], Tuple[float, Dict, bool]] = {}
-        self._quote_ttl = 60.0  # seconds
-        self._series_ttl = 300.0  # seconds
-        self._neg_quote_ttl = 15.0
-        self._neg_series_ttl = 45.0
+        self._quote_cache: dict[str, tuple[float, dict, bool]] = {}
+        self._series_cache: dict[tuple[str, str, str], tuple[float, dict, bool]] = {}
+        # TTLs (configurable via environment)
+        try:
+            self._quote_ttl = float(os.getenv('YAHOO_QUOTE_TTL_SEC', '60'))
+        except Exception:
+            self._quote_ttl = 60.0
+        try:
+            self._series_ttl = float(os.getenv('YAHOO_SERIES_TTL_SEC', '300'))
+        except Exception:
+            self._series_ttl = 300.0
+        try:
+            self._neg_quote_ttl = float(os.getenv('YAHOO_NEG_QUOTE_TTL_SEC', '15'))
+        except Exception:
+            self._neg_quote_ttl = 15.0
+        try:
+            self._neg_series_ttl = float(os.getenv('YAHOO_NEG_SERIES_TTL_SEC', '45'))
+        except Exception:
+            self._neg_series_ttl = 45.0
 
         # optional persistent cache; APIManager can set this attribute after construction
         self._persistent_cache = None  # type: ignore
@@ -381,9 +464,14 @@ class YahooFinanceClient:
 
         # Simple metrics counters
         self._metrics = {
-            'quote_hit': 0, 'quote_miss': 0, 'quote_stale': 0,
-            'series_hit': 0, 'series_miss': 0, 'series_stale': 0,
-            'screener_hit': 0, 'screener_miss': 0
+            'quote_hit': 0,
+            'quote_miss': 0,
+            'quote_stale': 0,
+            'series_hit': 0,
+            'series_miss': 0,
+            'series_stale': 0,
+            'screener_hit': 0,
+            'screener_miss': 0,
         }
 
         # Basic rate limiting with exponential backoff on 429s (shared across all requests)
@@ -391,10 +479,11 @@ class YahooFinanceClient:
         self._next_allowed_ts: float = 0.0
         self._backoff_sec: float = 0.0
         # Logging control: set YAHOO_LOG_ERRORS=1 to enable console error logs
-        self._log_errors = (os.getenv('YAHOO_LOG_ERRORS', '0').strip() in ('1', 'true', 'yes', 'on'))
+        self._log_errors = os.getenv('YAHOO_LOG_ERRORS', '0').strip() in ('1', 'true', 'yes', 'on')
         # Optional circuit breaker
         try:
             from utils.circuit_breaker import CircuitBreaker  # type: ignore
+
             self._cb = CircuitBreaker(
                 name='yahoo',
                 failure_threshold=int(os.getenv('YAHOO_CB_FAILURES', '8') or '8'),
@@ -404,7 +493,7 @@ class YahooFinanceClient:
         except Exception:
             self._cb = None  # type: ignore
 
-    def breaker_stats(self) -> Dict:
+    def breaker_stats(self) -> dict:
         try:
             if getattr(self, '_cb', None):
                 return self._cb.stats()  # type: ignore[attr-defined]
@@ -420,7 +509,9 @@ class YahooFinanceClient:
     def _note_429(self):
         # Increase backoff with jitter and set next allowed time
         with self._lock:
-            self._backoff_sec = max(2.0, min(60.0, self._backoff_sec * 2.0 if self._backoff_sec else 2.0))
+            self._backoff_sec = max(
+                2.0, min(60.0, self._backoff_sec * 2.0 if self._backoff_sec else 2.0)
+            )
             jitter = random.uniform(0.2, 0.8)
             self._next_allowed_ts = time.time() + self._backoff_sec + jitter
 
@@ -432,12 +523,12 @@ class YahooFinanceClient:
                 if self._backoff_sec == 0:
                     self._next_allowed_ts = 0.0
 
-    def get_quote(self, symbol: str) -> Optional[Dict]:
+    def get_quote(self, symbol: str) -> dict | None:
         # Serve from cache when fresh
         now = time.time()
         cached_entry = self._quote_cache.get(symbol)
-        cached_ts: Optional[float] = None
-        cached_data: Optional[Dict] = None
+        cached_ts: float | None = None
+        cached_data: dict | None = None
         cached_neg = False
         if isinstance(cached_entry, tuple):
             if len(cached_entry) == 3:
@@ -467,19 +558,28 @@ class YahooFinanceClient:
         try:
             if getattr(self, '_cb', None):
                 from utils.circuit_breaker import CircuitOpenError  # type: ignore
+
                 try:
                     with self._cb:  # type: ignore[attr-defined]
-                        if not getattr(self, '_http_only', False) and getattr(self, '_session', None):
-                            resp = self._session.get(self.BASE_QUOTE, params={'symbols': symbol}, timeout=10)
+                        if not getattr(self, '_http_only', False) and getattr(
+                            self, '_session', None
+                        ):
+                            resp = self._session.get(
+                                self.BASE_QUOTE, params={'symbols': symbol}, timeout=10
+                            )
                         elif getattr(self, '_http', None):
                             resp = self._http.get(self.BASE_QUOTE, params={'symbols': symbol})  # type: ignore[assignment]
                         else:
-                            resp = requests.get(self.BASE_QUOTE, params={'symbols': symbol}, timeout=10)
+                            resp = requests.get(
+                                self.BASE_QUOTE, params={'symbols': symbol}, timeout=10
+                            )
                 except CircuitOpenError:
                     raise requests.HTTPError('Circuit open for Yahoo quote')
             else:
                 if not getattr(self, '_http_only', False) and getattr(self, '_session', None):
-                    resp = self._session.get(self.BASE_QUOTE, params={'symbols': symbol}, timeout=10)
+                    resp = self._session.get(
+                        self.BASE_QUOTE, params={'symbols': symbol}, timeout=10
+                    )
                 elif getattr(self, '_http', None):
                     resp = self._http.get(self.BASE_QUOTE, params={'symbols': symbol})  # type: ignore[assignment]
                 else:
@@ -492,15 +592,15 @@ class YahooFinanceClient:
             # Treat common statuses gracefully without noisy exceptions
             if resp.status_code in (401, 403, 404):
                 # cache empty to avoid repeated retries for this symbol within TTL
-                out: Dict = {}
+                out: dict = {}
                 self._quote_cache[symbol] = (now, out, True)
                 return out
             resp.raise_for_status()
             self._note_success()
             data = resp.json() or {}
-            result = ((data.get('quoteResponse') or {}).get('result') or [])
+            result = (data.get('quoteResponse') or {}).get('result') or []
             if not result:
-                out: Dict = {}
+                out: dict = {}
                 # Cache empty to avoid repeated hits for missing symbols for a short time (negative TTL)
                 self._quote_cache[symbol] = (now, out, True)
                 return out
@@ -534,14 +634,16 @@ class YahooFinanceClient:
                 pass
             return {}
 
-    def get_time_series(self, symbol: str, interval: str = '1day', outputsize: str = 'compact') -> Optional[Dict]:
+    def get_time_series(
+        self, symbol: str, interval: str = '1day', outputsize: str = 'compact'
+    ) -> dict | None:
         """Return Alpha-Vantage-like time series dict built from Yahoo chart API."""
         # Cache check
         now = time.time()
         cache_key = (symbol, interval, outputsize)
         cached_entry = self._series_cache.get(cache_key)
-        cached_ts: Optional[float] = None
-        cached_data: Optional[Dict] = None
+        cached_ts: float | None = None
+        cached_data: dict | None = None
         cached_neg = False
         if isinstance(cached_entry, tuple):
             if len(cached_entry) == 3:
@@ -570,7 +672,14 @@ class YahooFinanceClient:
         try:
             # Map intervals and pick a reasonable range
             if interval in {'1min', '5min', '15min', '30min', '60min', '1hour'}:
-                yahoo_interval = {'1min': '1m', '5min': '5m', '15min': '15m', '30min': '30m', '60min': '60m', '1hour': '60m'}[interval]
+                yahoo_interval = {
+                    '1min': '1m',
+                    '5min': '5m',
+                    '15min': '15m',
+                    '30min': '30m',
+                    '60min': '60m',
+                    '1hour': '60m',
+                }[interval]
                 rng = '5d' if outputsize == 'compact' else '1mo'
                 title = f"Time Series ({yahoo_interval})"
             elif interval == '1week':
@@ -594,19 +703,28 @@ class YahooFinanceClient:
             }
             if getattr(self, '_cb', None):
                 from utils.circuit_breaker import CircuitOpenError  # type: ignore
+
                 try:
                     with self._cb:  # type: ignore[attr-defined]
-                        if not getattr(self, '_http_only', False) and getattr(self, '_session', None):
-                            resp = self._session.get(f"{self.BASE_CHART}/{symbol}", params=params, timeout=10)
+                        if not getattr(self, '_http_only', False) and getattr(
+                            self, '_session', None
+                        ):
+                            resp = self._session.get(
+                                f"{self.BASE_CHART}/{symbol}", params=params, timeout=10
+                            )
                         elif getattr(self, '_http', None):
                             resp = self._http.get(f"{self.BASE_CHART}/{symbol}", params=params)  # type: ignore[assignment]
                         else:
-                            resp = requests.get(f"{self.BASE_CHART}/{symbol}", params=params, timeout=10)
+                            resp = requests.get(
+                                f"{self.BASE_CHART}/{symbol}", params=params, timeout=10
+                            )
                 except CircuitOpenError:
                     raise requests.HTTPError('Circuit open for Yahoo chart')
             else:
                 if not getattr(self, '_http_only', False) and getattr(self, '_session', None):
-                    resp = self._session.get(f"{self.BASE_CHART}/{symbol}", params=params, timeout=10)
+                    resp = self._session.get(
+                        f"{self.BASE_CHART}/{symbol}", params=params, timeout=10
+                    )
                 elif getattr(self, '_http', None):
                     resp = self._http.get(f"{self.BASE_CHART}/{symbol}", params=params)  # type: ignore[assignment]
                 else:
@@ -624,14 +742,14 @@ class YahooFinanceClient:
             resp.raise_for_status()
             self._note_success()
             data = resp.json() or {}
-            result = ((data.get('chart') or {}).get('result') or [])
+            result = (data.get('chart') or {}).get('result') or []
             if not result:
                 out = {title: {}}
                 self._series_cache[cache_key] = (now, out, True)
                 return out
             r0 = result[0]
-            timestamps = (r0.get('timestamp') or [])
-            quotes = (((r0.get('indicators') or {}).get('quote')) or [])
+            timestamps = r0.get('timestamp') or []
+            quotes = ((r0.get('indicators') or {}).get('quote')) or []
             if not timestamps or not quotes:
                 out = {title: {}}
                 self._series_cache[cache_key] = (now, out, True)
@@ -644,18 +762,31 @@ class YahooFinanceClient:
             volumes = q0.get('volume') or []
 
             # Some intraday ranges use epoch seconds; we'll format to ISO date/time strings
-            out: Dict[str, Dict[str, str]] = {}
+            out: dict[str, dict[str, str]] = {}
             from datetime import datetime, timezone
+
             for i, ts in enumerate(timestamps):
                 try:
                     dt = datetime.fromtimestamp(ts, tz=timezone.utc)
-                    key = dt.strftime('%Y-%m-%d %H:%M:%S') if yahoo_interval.endswith('m') else dt.strftime('%Y-%m-%d')
+                    key = (
+                        dt.strftime('%Y-%m-%d %H:%M:%S')
+                        if yahoo_interval.endswith('m')
+                        else dt.strftime('%Y-%m-%d')
+                    )
                     out[key] = {
-                        '1. open': str(opens[i]) if i < len(opens) and opens[i] is not None else '0',
-                        '2. high': str(highs[i]) if i < len(highs) and highs[i] is not None else '0',
+                        '1. open': (
+                            str(opens[i]) if i < len(opens) and opens[i] is not None else '0'
+                        ),
+                        '2. high': (
+                            str(highs[i]) if i < len(highs) and highs[i] is not None else '0'
+                        ),
                         '3. low': str(lows[i]) if i < len(lows) and lows[i] is not None else '0',
-                        '4. close': str(closes[i]) if i < len(closes) and closes[i] is not None else '0',
-                        '5. volume': str(volumes[i]) if i < len(volumes) and volumes[i] is not None else '0',
+                        '4. close': (
+                            str(closes[i]) if i < len(closes) and closes[i] is not None else '0'
+                        ),
+                        '5. volume': (
+                            str(volumes[i]) if i < len(volumes) and volumes[i] is not None else '0'
+                        ),
                     }
                 except Exception:
                     continue
@@ -684,12 +815,16 @@ class YahooFinanceClient:
                 pass
             return out
 
-    def get_technical_indicators(self, symbol: str, indicator: str = 'RSI', interval: str = 'daily') -> Optional[Dict]:
+    def get_technical_indicators(
+        self, symbol: str, indicator: str = 'RSI', interval: str = 'daily'
+    ) -> dict | None:
         """Yahoo endpoint does not provide indicator endpoints; return None."""
         return None
 
     # ----------------- Screeners (day gainers/losers/most actives) -----------------
-    def get_predefined_screener(self, scr_id: str, count: int = 50, region: str = 'CA') -> List[Dict]:
+    def get_predefined_screener(
+        self, scr_id: str, count: int = 50, region: str = 'CA'
+    ) -> list[dict]:
         """Fetch predefined screener results from Yahoo.
 
         Common scr_ids: 'day_gainers', 'day_losers', 'most_actives'.
@@ -700,7 +835,9 @@ class YahooFinanceClient:
             try:
                 if getattr(self, '_persistent_cache', None):
                     ckey = f"{scr_id}|{int(count)}|{region}"
-                    cached = self._persistent_cache.get_if_fresh('screener', ckey, max_age_s=self._screener_ttl)
+                    cached = self._persistent_cache.get_if_fresh(
+                        'screener', ckey, max_age_s=self._screener_ttl
+                    )
                     if isinstance(cached, list) and cached:
                         try:
                             self._metrics['screener_hit'] += 1
@@ -718,9 +855,12 @@ class YahooFinanceClient:
             url = 'https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved'
             if getattr(self, '_cb', None):
                 from utils.circuit_breaker import CircuitOpenError  # type: ignore
+
                 try:
                     with self._cb:  # type: ignore[attr-defined]
-                        if not getattr(self, '_http_only', False) and getattr(self, '_session', None):
+                        if not getattr(self, '_http_only', False) and getattr(
+                            self, '_session', None
+                        ):
                             resp = self._session.get(url, params=params, timeout=12)
                         elif getattr(self, '_http', None):
                             resp = self._http.get(url, params=params)  # type: ignore[assignment]
@@ -743,22 +883,24 @@ class YahooFinanceClient:
             resp.raise_for_status()
             self._note_success()
             data = resp.json() or {}
-            results = (((data.get('finance') or {}).get('result')) or [])
+            results = ((data.get('finance') or {}).get('result')) or []
             if not results:
                 return []
-            quotes = (results[0].get('quotes') or [])
+            quotes = results[0].get('quotes') or []
             out = []
             for q in quotes:
                 try:
-                    out.append({
-                        'symbol': q.get('symbol'),
-                        'name': q.get('shortName') or q.get('longName') or '',
-                        'price': float(q.get('regularMarketPrice') or 0),
-                        'change': float(q.get('regularMarketChange') or 0),
-                        'changePct': float(q.get('regularMarketChangePercent') or 0),
-                        'volume': float(q.get('regularMarketVolume') or 0),
-                        'exchange': q.get('fullExchangeName') or q.get('exchange') or '',
-                    })
+                    out.append(
+                        {
+                            'symbol': q.get('symbol'),
+                            'name': q.get('shortName') or q.get('longName') or '',
+                            'price': float(q.get('regularMarketPrice') or 0),
+                            'change': float(q.get('regularMarketChange') or 0),
+                            'changePct': float(q.get('regularMarketChangePercent') or 0),
+                            'volume': float(q.get('regularMarketVolume') or 0),
+                            'exchange': q.get('fullExchangeName') or q.get('exchange') or '',
+                        }
+                    )
                 except Exception:
                     continue
             # write-through
@@ -795,7 +937,7 @@ _UNSET = object()
 class TelegramNotifier:
     """Telegram bot for portfolio notifications."""
 
-    def __init__(self, bot_token: Optional[str] = _UNSET, chat_id: Optional[str] = _UNSET):
+    def __init__(self, bot_token: str | None = _UNSET, chat_id: str | None = _UNSET):
         # If args are omitted, fall back to environment; if explicitly None, respect None (treat as unconfigured)
         if bot_token is _UNSET:
             self.bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -818,11 +960,7 @@ class TelegramNotifier:
 
         try:
             url = f"{self.base_url}/sendMessage"
-            data = {
-                'chat_id': self.chat_id,
-                'text': text,
-                'parse_mode': parse_mode
-            }
+            data = {'chat_id': self.chat_id, 'text': text, 'parse_mode': parse_mode}
             response = requests.post(url, json=data, timeout=10)
             response.raise_for_status()
             return True
@@ -830,7 +968,7 @@ class TelegramNotifier:
             print(f"Telegram error: {e}")
             return False
 
-    def set_bot_commands(self, commands: Optional[List[Dict[str, str]]] = None) -> bool:
+    def set_bot_commands(self, commands: list[dict[str, str]] | None = None) -> bool:
         """Set bot command menu for clients (best-effort)."""
         if not self.base_url:
             return False
@@ -868,6 +1006,7 @@ class TelegramNotifier:
         tech_fmt = 'plain'
         try:
             from wsapp_gui.config import app_config  # type: ignore
+
             tech_fmt = str(app_config.get('integrations.telegram.tech_format', 'plain') or 'plain')
         except Exception:
             tech_fmt = 'plain'
@@ -887,7 +1026,9 @@ class TelegramNotifier:
             else:
                 tech_prefix, tech_suffix = '🧠📊 ', ''
 
-        text = f"{emoji} <b>{tech_prefix}{title}{tech_suffix}</b>\n{message}\n\n<i>📅 {timestamp}</i>"
+        text = (
+            f"{emoji} <b>{tech_prefix}{title}{tech_suffix}</b>\n{message}\n\n<i>📅 {timestamp}</i>"
+        )
         return self.send_message(text)
 
     def send_portfolio_summary(self, total_value: float, pnl: float, positions_count: int) -> bool:
@@ -908,11 +1049,7 @@ class TelegramNotifier:
             return False
         try:
             url = f"{self.base_url}/sendMessage"
-            data = {
-                'chat_id': chat_id,
-                'text': text,
-                'parse_mode': parse_mode
-            }
+            data = {'chat_id': chat_id, 'text': text, 'parse_mode': parse_mode}
             response = requests.post(url, json=data, timeout=10)
             response.raise_for_status()
             return True
@@ -921,7 +1058,7 @@ class TelegramNotifier:
             return False
 
     # ------------ Inbound chat (optional polling) ------------
-    def get_updates(self, timeout: int = 20) -> List[Dict]:
+    def get_updates(self, timeout: int = 20) -> list[dict]:
         """Fetch new updates via long polling. Returns a list of update dicts.
         Uses offset to avoid duplicates. Requires bot_token.
         """
@@ -931,7 +1068,7 @@ class TelegramNotifier:
             params = {'timeout': timeout}
             if self._last_update_id is not None:
                 params['offset'] = self._last_update_id + 1
-            resp = requests.get(f"{self.base_url}/getUpdates", params=params, timeout=timeout+5)
+            resp = requests.get(f"{self.base_url}/getUpdates", params=params, timeout=timeout + 5)
             resp.raise_for_status()
             data = resp.json() or {}
             updates = data.get('result', []) or []
@@ -949,7 +1086,7 @@ class TelegramNotifier:
                 self._err_count = 1
             return []
 
-    def start_polling(self, handler, allowed_chat_id: Optional[str] = None):
+    def start_polling(self, handler, allowed_chat_id: str | None = None):
         """Start a background thread to poll Telegram updates and invoke handler(text, chat_id).
         If allowed_chat_id is set, only messages from that chat are processed.
         """
@@ -964,7 +1101,7 @@ class TelegramNotifier:
                 updates = self.get_updates(timeout=25)
                 for upd in updates:
                     msg = upd.get('message') or {}
-                    chat = (msg.get('chat') or {})
+                    chat = msg.get('chat') or {}
                     chat_id = str(chat.get('id')) if chat.get('id') is not None else None
                     if allowed_chat_id and chat_id != str(allowed_chat_id):
                         continue
@@ -988,7 +1125,14 @@ class TelegramNotifier:
         self._polling = False
 
     # ------------- Simple command handler: /summary -> send insights -------------
-    def start_command_handler(self, agent, allowed_chat_id: Optional[str] = None, allowed_chat_ids: Optional[List[str]] = None):
+    def start_command_handler(
+        self,
+        agent,
+        allowed_chat_id: str | None = None,
+        allowed_chat_ids: list[str] | None = None,
+        trade_executor=None,
+        strategy_runner=None,
+    ):
         """Start polling and handle simple commands like /summary.
 
         The handler will reply with the portfolio insights using the provided agent.
@@ -996,16 +1140,21 @@ class TelegramNotifier:
         if not self.base_url:
             return False
 
-        def _handler(text: str, chat_id: Optional[str]):
+        def _handler(text: str, chat_id: str | None):
             try:
                 if not text:
                     return
                 # authorization (single or list)
                 if allowed_chat_id and chat_id != str(allowed_chat_id):
                     return
-                if allowed_chat_ids and (chat_id is None or str(chat_id) not in set(map(str, allowed_chat_ids))):
+                if allowed_chat_ids and (
+                    chat_id is None or str(chat_id) not in set(map(str, allowed_chat_ids))
+                ):
                     return
                 t = text.strip().lower()
+                # Shortcuts to shared objects
+                _ex = trade_executor
+                _am = getattr(agent, 'api_manager', None)
                 # Summary/insights
                 if t.startswith('/summary') or t.startswith('/insights'):
                     # Prefer public insights() if available; fallback to chat command
@@ -1083,8 +1232,285 @@ class TelegramNotifier:
                             "/signals\n"
                             "/movers\n"
                             "/opportunites\n"
+                            "— Contrôle —\n"
+                            "/status                       (état AutoTrade)\n"
+                            "/autotrade on|off            (activer/désactiver)\n"
+                            "/mode paper|live [confirm]   (sécurisé: live exige confirm)\n"
+                            "/size N                       (taille base ex: 1000)\n"
+                            "/buy SYM [qty N|$N] [mkt|limit P|stop P|stoplimit S L]\n"
+                            "/sell SYM [qty N|$N] [mkt|limit P|stop P|stoplimit S L]\n"
+                            "/metrics                      (compteurs API)\n"
+                            "/profile SYM1,SYM2 [series]  (profilage rapide)\n"
+                            "/provider show|alpha|yahoo    (source marché)\n"
                         ),
                     )
+                    return
+                # ---- Control: status ----
+                if t.startswith('/status'):
+                    msg = []
+                    if _ex is not None:
+                        try:
+                            msg.append(_ex.summary())
+                            acts = _ex.last_actions(5)
+                            if acts:
+                                msg.append("Dernières actions:")
+                                msg.extend(f" - {a}" for a in acts)
+                        except Exception:
+                            pass
+                    if _am is not None:
+                        try:
+                            prov = getattr(_am, 'get_market_provider', lambda: 'unknown')()
+                            msg.append(f"Provider: {prov}")
+                        except Exception:
+                            pass
+                    out = "\n".join(msg) or "Aucun état disponible."
+                    self.send_message_to(chat_id or self.chat_id, out)
+                    return
+                # ---- Control: autotrade on/off ----
+                if t.startswith('/autotrade'):
+                    parts = text.strip().split()
+                    if _ex is None:
+                        self.send_message_to(chat_id or self.chat_id, "Exécuteur indisponible.")
+                        return
+                    if len(parts) >= 2:
+                        onoff = parts[1].lower()
+                        try:
+                            enabled = onoff in ('on', '1', 'true', 'yes', 'enable', 'enabled')
+                            _ex.configure(enabled=enabled)
+                            # Persist preference if GUI config exists
+                            try:
+                                from wsapp_gui.config import app_config as _cfg  # type: ignore
+
+                                _cfg.set('autotrade.enabled', bool(enabled))
+                            except Exception:
+                                pass
+                            self.send_message_to(
+                                chat_id or self.chat_id,
+                                f"AutoTrade -> {'ON' if enabled else 'OFF'}",
+                            )
+                        except Exception as e:
+                            self.send_message_to(chat_id or self.chat_id, f"Erreur: {e}")
+                    else:
+                        self.send_message_to(chat_id or self.chat_id, "Usage: /autotrade on|off")
+                    return
+                # ---- Control: mode paper|live ----
+                if t.startswith('/mode'):
+                    parts = text.strip().split()
+                    if _ex is None:
+                        self.send_message_to(chat_id or self.chat_id, "Exécuteur indisponible.")
+                        return
+                    if len(parts) >= 2:
+                        mode = parts[1].lower()
+                        if mode not in ('paper', 'live'):
+                            self.send_message_to(
+                                chat_id or self.chat_id, "Usage: /mode paper|live [confirm]"
+                            )
+                            return
+                        if mode == 'live' and (len(parts) < 3 or parts[2].lower() != 'confirm'):
+                            self.send_message_to(
+                                chat_id or self.chat_id,
+                                "Sécurité: confirmez avec /mode live confirm",
+                            )
+                            return
+                        try:
+                            _ex.configure(mode=mode)
+                            try:
+                                from wsapp_gui.config import app_config as _cfg  # type: ignore
+
+                                _cfg.set('autotrade.mode', mode)
+                            except Exception:
+                                pass
+                            self.send_message_to(chat_id or self.chat_id, f"Mode -> {mode.upper()}")
+                        except Exception as e:
+                            self.send_message_to(chat_id or self.chat_id, f"Erreur: {e}")
+                    else:
+                        self.send_message_to(
+                            chat_id or self.chat_id, "Usage: /mode paper|live [confirm]"
+                        )
+                    return
+                # ---- Control: base size ----
+                if t.startswith('/size'):
+                    parts = text.strip().split()
+                    if _ex is None:
+                        self.send_message_to(chat_id or self.chat_id, "Exécuteur indisponible.")
+                        return
+                    if len(parts) >= 2:
+                        try:
+                            size = float(parts[1].replace(',', ''))
+                            _ex.configure_simple(enabled=_ex.enabled, mode=_ex.mode, base_size=size)
+                            try:
+                                from wsapp_gui.config import app_config as _cfg  # type: ignore
+
+                                _cfg.set('autotrade.base_size', float(size))
+                            except Exception:
+                                pass
+                            self.send_message_to(chat_id or self.chat_id, f"Taille -> {size:.0f}")
+                        except Exception as e:
+                            self.send_message_to(chat_id or self.chat_id, f"Erreur: {e}")
+                    else:
+                        self.send_message_to(chat_id or self.chat_id, "Usage: /size N")
+                    return
+                # ---- Control: provider show|alpha|yahoo ----
+                if t.startswith('/provider'):
+                    parts = text.strip().split()
+                    if _am is None:
+                        self.send_message_to(chat_id or self.chat_id, "API manager indisponible.")
+                        return
+                    if len(parts) == 1 or parts[1].lower() == 'show':
+                        prov = getattr(_am, 'get_market_provider', lambda: 'unknown')()
+                        self.send_message_to(chat_id or self.chat_id, f"Provider: {prov}")
+                        return
+                    target = parts[1].lower()
+                    try:
+                        setf = getattr(_am, 'set_market_provider', None)
+                        if callable(setf):
+                            newp = setf(target)
+                            self.send_message_to(chat_id or self.chat_id, f"Provider -> {newp}")
+                        else:
+                            self.send_message_to(
+                                chat_id or self.chat_id, "Changement provider non supporté."
+                            )
+                    except Exception as e:
+                        self.send_message_to(chat_id or self.chat_id, f"Erreur: {e}")
+                    return
+                # ---- Diagnostics: metrics ----
+                if t.startswith('/metrics'):
+                    if _am is None:
+                        self.send_message_to(chat_id or self.chat_id, "API manager indisponible.")
+                        return
+                    try:
+                        m = _am.get_metrics_counters()
+                    except Exception:
+                        m = {}
+                    try:
+                        cstats = _am.get_cache_stats()
+                    except Exception:
+                        cstats = {}
+                    msg = ["[API Metrics]"]
+                    if m:
+                        for k, v in m.items():
+                            msg.append(f" - {k}: {v}")
+                    if cstats:
+                        total = cstats.get('total')
+                        msg.append(f"[Cache] total rows: {total}")
+                        ns = cstats.get('namespaces') or {}
+                        for ns_name, info in ns.items():
+                            msg.append(f" - {ns_name}: {info.get('count')}")
+                    self.send_message_to(chat_id or self.chat_id, "\n".join(msg))
+                    return
+                # ---- Diagnostics: profile ----
+                if t.startswith('/profile'):
+                    if _am is None:
+                        self.send_message_to(chat_id or self.chat_id, "API manager indisponible.")
+                        return
+                    parts = text.strip().split()
+                    if len(parts) >= 2:
+                        syms = [s.strip().upper() for s in parts[1].split(',') if s.strip()]
+                    else:
+                        syms = []
+                    include_series = 'series' in t
+                    if not syms:
+                        self.send_message_to(
+                            chat_id or self.chat_id, "Usage: /profile SYM1,SYM2 [series]"
+                        )
+                        return
+                    try:
+                        stats = _am.profile_hot_paths(syms, include_series=include_series)
+                        self.send_message_to(chat_id or self.chat_id, json.dumps(stats, indent=2))
+                    except Exception as e:
+                        self.send_message_to(chat_id or self.chat_id, f"Erreur: {e}")
+                    return
+                # ---- Orders: /buy and /sell (paper by default) ----
+                if t.startswith('/buy') or t.startswith('/sell'):
+                    if _ex is None:
+                        self.send_message_to(chat_id or self.chat_id, "Exécuteur indisponible.")
+                        return
+                    parts = text.strip().split()
+                    if len(parts) < 2:
+                        self.send_message_to(
+                            chat_id or self.chat_id,
+                            "Usage: /buy SYM [qty N|$N] [mkt|limit P|stop P|stoplimit S L]",
+                        )
+                        return
+                    side = 'buy' if t.startswith('/buy') else 'sell'
+                    sym = parts[1].upper()
+                    qty = None
+                    notional = None
+                    order_type = 'market'
+                    limit_price = None
+                    stop_price = None
+                    # parse remaining tokens
+                    i = 2
+                    while i < len(parts):
+                        tok = parts[i].lower()
+                        if tok == 'qty' and i + 1 < len(parts):
+                            try:
+                                qty = float(parts[i + 1].replace(',', ''))
+                            except Exception:
+                                pass
+                            i += 2
+                            continue
+                        if tok.startswith('$'):
+                            try:
+                                notional = float(tok[1:].replace(',', ''))
+                            except Exception:
+                                pass
+                            i += 1
+                            continue
+                        if tok in ('mkt', 'market'):
+                            order_type = 'market'
+                            i += 1
+                            continue
+                        if tok == 'limit' and i + 1 < len(parts):
+                            order_type = 'limit'
+                            try:
+                                limit_price = float(parts[i + 1].replace(',', ''))
+                            except Exception:
+                                pass
+                            i += 2
+                            continue
+                        if tok == 'stop' and i + 1 < len(parts):
+                            order_type = 'stop'
+                            try:
+                                stop_price = float(parts[i + 1].replace(',', ''))
+                            except Exception:
+                                pass
+                            i += 2
+                            continue
+                        if tok == 'stoplimit' and i + 2 < len(parts):
+                            order_type = 'stop_limit'
+                            try:
+                                stop_price = float(parts[i + 1].replace(',', ''))
+                                limit_price = float(parts[i + 2].replace(',', ''))
+                            except Exception:
+                                pass
+                            i += 3
+                            continue
+                        # numeric without prefix -> assume qty
+                        try:
+                            val = float(tok.replace(',', ''))
+                            # if previously set notional, treat as qty fallback
+                            if qty is None and val > 0:
+                                qty = val
+                        except Exception:
+                            pass
+                        i += 1
+                    try:
+                        res = _ex.place_order(
+                            symbol=sym,
+                            side=side,
+                            order_type=order_type,
+                            qty=qty,
+                            notional=notional,
+                            limit_price=limit_price,
+                            stop_price=stop_price,
+                        )
+                        status = res.get('status') if isinstance(res, dict) else None
+                        self.send_message_to(
+                            chat_id or self.chat_id, f"{side.upper()} {sym} -> {status or 'sent'}"
+                        )
+                    except Exception as e:
+                        self.send_message_to(chat_id or self.chat_id, f"Erreur: {e}")
                     return
                 # Not a recognized command: forward raw text to agent.chat
                 if agent and text and not t.startswith('/'):
@@ -1115,12 +1541,14 @@ class APIManager:
         # Optional async HTTP client scaffold (may be used by async batch APIs later)
         try:
             from utils.http_client import AsyncHTTPClient  # type: ignore
+
             self._async_http = AsyncHTTPClient(headers={'Accept': 'application/json'})
         except Exception:
             self._async_http = None  # type: ignore
         # Persistent cache (SQLite)
         try:
             from utils.sqlite_cache import PersistentCache  # type: ignore
+
             self._cache = PersistentCache(os.getenv('WSAPP_CACHE_DB') or None)
         except Exception:
             self._cache = None  # fail-soft if module not present
@@ -1143,8 +1571,19 @@ class APIManager:
         provider = provider.lower()
         self.market = self.alpha_vantage if provider == 'alpha' else self.yahoo
         self.telegram = TelegramNotifier()
+        # Micro-memoization caches for recent results (short-lived)
+        self._memo_quote: dict[str, tuple[float, dict]] = {}
+        self._memo_series: dict[str, tuple[float, dict]] = {}
+        try:
+            self._memo_quote_ttl = float(os.getenv('MEMO_QUOTE_TTL_SEC', '5'))
+        except Exception:
+            self._memo_quote_ttl = 5.0
+        try:
+            self._memo_series_ttl = float(os.getenv('MEMO_SERIES_TTL_SEC', '10'))
+        except Exception:
+            self._memo_series_ttl = 10.0
         # Notify rate limiting (per code)
-        self._notify_last_ts: Dict[str, float] = {}
+        self._notify_last_ts: dict[str, float] = {}
         try:
             self._notify_min_interval_sec = float(os.getenv('ALERT_MIN_INTERVAL_SEC', '30'))
         except Exception:
@@ -1155,7 +1594,7 @@ class APIManager:
         except Exception:
             self._tech_coalesce_window_sec = 15.0
         # Buffer entries are mutable lists: [ts, code, message, level, sent]
-        self._tech_buffer: List[list] = []  # [float, str, str, str, bool]
+        self._tech_buffer: list[list] = []  # [float, str, str, str, bool]
         self._tech_buffer_lock = threading.Lock()
         self._tech_flush_timer = None
         # Optional: start persistent cache housekeeping in background
@@ -1164,6 +1603,17 @@ class APIManager:
                 self._start_cache_housekeeping_thread()
         except Exception:
             pass
+        # Lightweight metrics counters (for diagnostics UI)
+        self._metrics = {
+            'quote_memo_hit': 0,
+            'quote_cache_hit': 0,
+            'quote_provider_alpha': 0,
+            'quote_provider_yahoo': 0,
+            'series_memo_hit': 0,
+            'series_cache_hit': 0,
+            'series_provider_alpha': 0,
+            'series_provider_yahoo': 0,
+        }
         # Optional: periodic breaker metrics logging
         try:
             self._start_cb_metrics_logging_thread()
@@ -1171,16 +1621,45 @@ class APIManager:
             pass
         # Capture http-only mode flag (propagated via env)
         try:
-            self.httpclient_only = (os.getenv('WSAPP_HTTPCLIENT_ONLY', '0').strip().lower() in ('1', 'true', 'yes', 'on'))
+            self.httpclient_only = os.getenv('WSAPP_HTTPCLIENT_ONLY', '0').strip().lower() in (
+                '1',
+                'true',
+                'yes',
+                'on',
+            )
         except Exception:
             self.httpclient_only = False
 
+    # ---- Provider controls ----
+    def get_market_provider(self) -> str:
+        try:
+            return 'alpha' if self.market is self.alpha_vantage else 'yahoo'
+        except Exception:
+            return 'unknown'
+
+    def set_market_provider(self, provider: str) -> str:
+        """Set market data provider to 'alpha' or 'yahoo'. Returns provider actually set.
+
+        If selecting 'alpha' without API key, falls back to 'yahoo'.
+        """
+        p = (provider or '').strip().lower()
+        if p == 'alpha':
+            if os.getenv('ALPHA_VANTAGE_KEY'):
+                self.market = self.alpha_vantage
+                return 'alpha'
+            # no key -> fallback
+            self.market = self.yahoo
+            return 'yahoo'
+        # default any other to yahoo
+        self.market = self.yahoo
+        return 'yahoo'
+
     # Convenience: start Telegram command polling with an agent
-    def start_telegram_commands(self, agent, allowed_chat_id: Optional[str] = None) -> bool:
+    def start_telegram_commands(self, agent, allowed_chat_id: str | None = None) -> bool:
         return self.telegram.start_command_handler(agent, allowed_chat_id=allowed_chat_id)
 
     # ---------- Resilient wrappers with fallback ----------
-    def _yahoo_quote_with_suffixes(self, symbol: str) -> Dict:
+    def _yahoo_quote_with_suffixes(self, symbol: str) -> dict:
         for suf in ("", ".TO", ".CN", ".NE"):
             s = symbol if not suf else f"{symbol}{suf}"
             data = self.yahoo.get_quote(s)
@@ -1188,7 +1667,7 @@ class APIManager:
                 return data
         return {}
 
-    def _yahoo_series_with_suffixes(self, symbol: str, interval: str, outputsize: str) -> Dict:
+    def _yahoo_series_with_suffixes(self, symbol: str, interval: str, outputsize: str) -> dict:
         for suf in ("", ".TO", ".CN", ".NE"):
             s = symbol if not suf else f"{symbol}{suf}"
             data = self.yahoo.get_time_series(s, interval=interval, outputsize=outputsize)
@@ -1196,7 +1675,7 @@ class APIManager:
                 return data
         return {}
 
-    def _is_valid_quote(self, data: Optional[Dict]) -> bool:
+    def _is_valid_quote(self, data: dict | None) -> bool:
         if not data or not isinstance(data, dict):
             return False
         try:
@@ -1205,7 +1684,7 @@ class APIManager:
         except Exception:
             return False
 
-    def _is_valid_series(self, data: Optional[Dict]) -> bool:
+    def _is_valid_series(self, data: dict | None) -> bool:
         if not data or not isinstance(data, dict):
             return False
         # Alpha Vantage style keys contain 'Time Series'; Yahoo wrapper uses similar
@@ -1214,38 +1693,70 @@ class APIManager:
                 return True
         return False
 
-    def get_quote(self, symbol: str) -> Dict:
+    def get_quote(self, symbol: str) -> dict:
         """Get quote preferring Alpha Vantage; falls back to Yahoo if invalid or unavailable.
         If provider is forced to 'yahoo', uses Yahoo only.
         """
+        # Micro-memoization: avoid repeated work within a few seconds
+        try:
+            m = self._memo_quote.get(symbol)
+            if m and (time.time() - m[0]) < self._memo_quote_ttl:
+                try:
+                    self._metrics['quote_memo_hit'] += 1
+                except Exception:
+                    pass
+                return m[1]
+        except Exception:
+            pass
         # 1) Try persistent cache (fresh within 60s)
-        cached: Optional[Dict] = None
         try:
             if getattr(self, '_cache', None):
-                cached = self._cache.get_if_fresh('quote', symbol, max_age_s=float(os.getenv('CACHE_TTL_QUOTE_SEC', '60')))
+                cached = self._cache.get_if_fresh(
+                    'quote', symbol, max_age_s=float(os.getenv('CACHE_TTL_QUOTE_SEC', '60'))
+                )
                 if isinstance(cached, dict) and self._is_valid_quote(cached):
+                    try:
+                        self._metrics['quote_cache_hit'] += 1
+                    except Exception:
+                        pass
                     return cached
         except Exception:
-            cached = None
+            pass
 
         use_alpha = self.market is self.alpha_vantage
         if use_alpha:
             data = self.alpha_vantage.get_quote(symbol)
             if self._is_valid_quote(data):
                 try:
+                    self._metrics['quote_provider_alpha'] += 1
+                except Exception:
+                    pass
+                try:
                     if getattr(self, '_cache', None):
                         self._cache.set('quote', symbol, data)
+                except Exception:
+                    pass
+                try:
+                    self._memo_quote[symbol] = (time.time(), data)
                 except Exception:
                     pass
                 return data
             # fallback to Yahoo (+ suffix heuristics)
             data = self._yahoo_quote_with_suffixes(symbol)
-            try:
-                if self._is_valid_quote(data) and getattr(self, '_cache', None):
-                    self._cache.set('quote', symbol, data)
-            except Exception:
-                pass
             if self._is_valid_quote(data):
+                try:
+                    self._metrics['quote_provider_yahoo'] += 1
+                except Exception:
+                    pass
+                try:
+                    if getattr(self, '_cache', None):
+                        self._cache.set('quote', symbol, data)
+                except Exception:
+                    pass
+                try:
+                    self._memo_quote[symbol] = (time.time(), data)
+                except Exception:
+                    pass
                 return data
             # stale-if-error from persistent cache
             try:
@@ -1256,14 +1767,23 @@ class APIManager:
             except Exception:
                 pass
             return data or {}
+
         # provider forced to Yahoo
         data = self._yahoo_quote_with_suffixes(symbol)
-        try:
-            if self._is_valid_quote(data) and getattr(self, '_cache', None):
-                self._cache.set('quote', symbol, data)
-        except Exception:
-            pass
         if self._is_valid_quote(data):
+            try:
+                self._metrics['quote_provider_yahoo'] += 1
+            except Exception:
+                pass
+            try:
+                if getattr(self, '_cache', None):
+                    self._cache.set('quote', symbol, data)
+            except Exception:
+                pass
+            try:
+                self._memo_quote[symbol] = (time.time(), data)
+            except Exception:
+                pass
             return data
         try:
             if getattr(self, '_cache', None):
@@ -1274,8 +1794,21 @@ class APIManager:
             pass
         return data or {}
 
-    def get_time_series(self, symbol: str, interval: str = '1day', outputsize: str = 'compact') -> Dict:
+    def get_time_series(
+        self, symbol: str, interval: str = '1day', outputsize: str = 'compact'
+    ) -> dict:
         """Get time series preferring Alpha; falls back to Yahoo on failure. Respects provider override."""
+        memo_key = f"{symbol}|{interval}|{outputsize}"
+        try:
+            m = self._memo_series.get(memo_key)
+            if m and (time.time() - m[0]) < self._memo_series_ttl:
+                try:
+                    self._metrics['series_memo_hit'] += 1
+                except Exception:
+                    pass
+                return m[1]
+        except Exception:
+            pass
         # 1) Try persistent cache (fresh within 5 minutes for series; configurable)
         cache_key = f"{symbol}|{interval}|{outputsize}"
         try:
@@ -1283,35 +1816,69 @@ class APIManager:
                 ttl_series = float(os.getenv('CACHE_TTL_SERIES_SEC', '300'))
                 cached = self._cache.get_if_fresh('series', cache_key, max_age_s=ttl_series)
                 if isinstance(cached, dict) and self._is_valid_series(cached):
+                    try:
+                        self._metrics['series_cache_hit'] += 1
+                    except Exception:
+                        pass
                     return cached
         except Exception:
             pass
 
         use_alpha = self.market is self.alpha_vantage
         if use_alpha:
-            data = self.alpha_vantage.get_time_series(symbol, interval=interval, outputsize=outputsize)
+            data = self.alpha_vantage.get_time_series(
+                symbol, interval=interval, outputsize=outputsize
+            )
             if self._is_valid_series(data):
+                try:
+                    self._metrics['series_provider_alpha'] += 1
+                except Exception:
+                    pass
                 try:
                     if getattr(self, '_cache', None):
                         self._cache.set('series', cache_key, data)
+                except Exception:
+                    pass
+                try:
+                    self._memo_series[memo_key] = (time.time(), data)
                 except Exception:
                     pass
                 return data
             # fallback to Yahoo with suffix heuristics; if intraday empty, retry daily
-            data = self._yahoo_series_with_suffixes(symbol, interval=interval, outputsize=outputsize)
+            data = self._yahoo_series_with_suffixes(
+                symbol, interval=interval, outputsize=outputsize
+            )
             if self._is_valid_series(data):
+                try:
+                    self._metrics['series_provider_yahoo'] += 1
+                except Exception:
+                    pass
                 try:
                     if getattr(self, '_cache', None):
                         self._cache.set('series', cache_key, data)
                 except Exception:
                     pass
+                try:
+                    self._memo_series[memo_key] = (time.time(), data)
+                except Exception:
+                    pass
                 return data
             if interval != '1day':
-                data = self._yahoo_series_with_suffixes(symbol, interval='1day', outputsize=outputsize)
+                data = self._yahoo_series_with_suffixes(
+                    symbol, interval='1day', outputsize=outputsize
+                )
                 if self._is_valid_series(data):
+                    try:
+                        self._metrics['series_provider_yahoo'] += 1
+                    except Exception:
+                        pass
                     try:
                         if getattr(self, '_cache', None):
                             self._cache.set('series', cache_key, data)
+                    except Exception:
+                        pass
+                    try:
+                        self._memo_series[memo_key] = (time.time(), data)
                     except Exception:
                         pass
                     return data
@@ -1324,12 +1891,21 @@ class APIManager:
             except Exception:
                 pass
             return {}
+
         # provider forced to Yahoo
         data = self._yahoo_series_with_suffixes(symbol, interval=interval, outputsize=outputsize)
         if self._is_valid_series(data):
             try:
+                self._metrics['series_provider_yahoo'] += 1
+            except Exception:
+                pass
+            try:
                 if getattr(self, '_cache', None):
                     self._cache.set('series', cache_key, data)
+            except Exception:
+                pass
+            try:
+                self._memo_series[memo_key] = (time.time(), data)
             except Exception:
                 pass
             return data
@@ -1337,8 +1913,16 @@ class APIManager:
             data = self._yahoo_series_with_suffixes(symbol, interval='1day', outputsize=outputsize)
             if self._is_valid_series(data):
                 try:
+                    self._metrics['series_provider_yahoo'] += 1
+                except Exception:
+                    pass
+                try:
                     if getattr(self, '_cache', None):
                         self._cache.set('series', cache_key, data)
+                except Exception:
+                    pass
+                try:
+                    self._memo_series[memo_key] = (time.time(), data)
                 except Exception:
                     pass
                 return data
@@ -1352,13 +1936,16 @@ class APIManager:
             pass
         return {}
 
-    def get_market_overview(self, symbols: List[str]) -> Dict:
+    # -------------- Diagnostics --------------
+    def get_metrics_counters(self) -> dict:
+        try:
+            return dict(self._metrics)
+        except Exception:
+            return {}
+
+    def get_market_overview(self, symbols: list[str]) -> dict:
         """Get comprehensive market overview for given symbols."""
-        overview = {
-            'quotes': {},
-            'news': [],
-            'timestamp': datetime.now().isoformat()
-        }
+        overview = {'quotes': {}, 'news': [], 'timestamp': datetime.now().isoformat()}
 
         # Get quotes for each symbol
         for symbol in symbols[:5]:  # Limit to avoid API rate limits
@@ -1372,16 +1959,20 @@ class APIManager:
 
         # Optional metrics log (set YAHOO_LOG_ERRORS=1 to see)
         try:
-            if getattr(self.yahoo, '_metrics', None) and bool(os.getenv('YAHOO_LOG_ERRORS', '0') in ('1', 'true', 'yes', 'on')):
+            if getattr(self.yahoo, '_metrics', None) and bool(
+                os.getenv('YAHOO_LOG_ERRORS', '0') in ('1', 'true', 'yes', 'on')
+            ):
                 m = self.yahoo._metrics  # type: ignore[attr-defined]
-                print(f"[yahoo-metrics] quote_hit={m['quote_hit']} miss={m['quote_miss']} stale={m['quote_stale']} | series_hit={m['series_hit']} miss={m['series_miss']} stale={m['series_stale']} | screener_hit={m['screener_hit']} miss={m['screener_miss']}")
+                print(
+                    f"[yahoo-metrics] quote_hit={m['quote_hit']} miss={m['quote_miss']} stale={m['quote_stale']} | series_hit={m['series_hit']} miss={m['series_miss']} stale={m['series_stale']} | screener_hit={m['screener_hit']} miss={m['screener_miss']}"
+                )
         except Exception:
             pass
         return overview
 
     # ----------------- Metrics Export -----------------
-    def get_circuit_breaker_stats(self) -> Dict[str, Dict]:
-        out: Dict[str, Dict] = {}
+    def get_circuit_breaker_stats(self) -> dict[str, dict]:
+        out: dict[str, dict] = {}
         try:
             if hasattr(self.yahoo, 'breaker_stats'):
                 out['yahoo'] = self.yahoo.breaker_stats()  # type: ignore[attr-defined]
@@ -1399,7 +1990,7 @@ class APIManager:
             out['newsapi'] = {}
         return out
 
-    def get_cache_stats(self) -> Dict:
+    def get_cache_stats(self) -> dict:
         try:
             if getattr(self, '_cache', None):
                 return self._cache.stats()  # type: ignore[attr-defined]
@@ -1432,8 +2023,47 @@ class APIManager:
         except Exception:
             pass
 
+    # ----------------- Lightweight profiling -----------------
+    def profile_hot_paths(self, symbols: list[str], *, include_series: bool = False) -> dict:
+        """Profile burst requests for quotes (and optionally series) and return timing stats.
+
+        Returns dict with avg_ms, p95_ms for quotes and optionally series.
+        Does not alter memo/config; uses current provider and caches.
+        """
+        import time as _t
+
+        stats: dict[str, dict] = {}
+        # Quotes burst
+        qt: list[float] = []
+        for s in symbols:
+            t0 = _t.perf_counter()
+            try:
+                _ = self.get_quote(s)
+            except Exception:
+                pass
+            qt.append((_t.perf_counter() - t0) * 1000.0)
+        if qt:
+            qt_sorted = sorted(qt)
+            p95 = qt_sorted[min(len(qt_sorted) - 1, int(len(qt_sorted) * 0.95))]
+            stats['quotes'] = {'avg_ms': sum(qt) / len(qt), 'p95_ms': p95}
+        # Series burst (optional, compact daily)
+        if include_series:
+            st: list[float] = []
+            for s in symbols:
+                t0 = _t.perf_counter()
+                try:
+                    _ = self.get_time_series(s, interval='1day', outputsize='compact')
+                except Exception:
+                    pass
+                st.append((_t.perf_counter() - t0) * 1000.0)
+            if st:
+                st_sorted = sorted(st)
+                p95s = st_sorted[min(len(st_sorted) - 1, int(len(st_sorted) * 0.95))]
+                stats['series'] = {'avg_ms': sum(st) / len(st), 'p95_ms': p95s}
+        return stats
+
     # ----------------- Async batch APIs (concurrent fetches) -----------------
-    async def aget_quotes(self, symbols: List[str], max_concurrency: int = 5) -> Dict[str, Dict]:
+    async def aget_quotes(self, symbols: list[str], max_concurrency: int = 5) -> dict[str, dict]:
         """Fetch quotes concurrently for a list of symbols while reusing existing sync logic.
 
         Concurrency is achieved via asyncio.to_thread to preserve current provider behavior.
@@ -1446,13 +2076,13 @@ class APIManager:
 
         sem = asyncio.Semaphore(max(1, int(max_concurrency)))
 
-        async def _one(sym: str) -> Tuple[str, Dict]:
+        async def _one(sym: str) -> tuple[str, dict]:
             async with sem:
                 res = await asyncio.to_thread(self.get_quote, sym)
                 return sym, (res or {})
 
         tasks = [_one(s) for s in symbols]
-        out: Dict[str, Dict] = {}
+        out: dict[str, dict] = {}
         for coro in asyncio.as_completed(tasks):
             try:
                 k, v = await coro
@@ -1461,7 +2091,9 @@ class APIManager:
                 continue
         return out
 
-    async def aget_time_series_batch(self, reqs: List[Tuple[str, str, str]], max_concurrency: int = 3) -> Dict[str, Dict]:
+    async def aget_time_series_batch(
+        self, reqs: list[tuple[str, str, str]], max_concurrency: int = 3
+    ) -> dict[str, dict]:
         """Fetch multiple time series concurrently.
 
         Each request is a tuple (symbol, interval, outputsize). Result keys are 'symbol|interval|outputsize'.
@@ -1470,7 +2102,7 @@ class APIManager:
             import asyncio
         except Exception:
             # Fallback sequential
-            out: Dict[str, Dict] = {}
+            out: dict[str, dict] = {}
             for sym, interval, size in reqs:
                 key = f"{sym}|{interval}|{size}"
                 out[key] = self.get_time_series(sym, interval=interval, outputsize=size)
@@ -1478,14 +2110,14 @@ class APIManager:
 
         sem = asyncio.Semaphore(max(1, int(max_concurrency)))
 
-        async def _one(sym: str, interval: str, size: str) -> Tuple[str, Dict]:
+        async def _one(sym: str, interval: str, size: str) -> tuple[str, dict]:
             key = f"{sym}|{interval}|{size}"
             async with sem:
                 res = await asyncio.to_thread(self.get_time_series, sym, interval, size)
                 return key, (res or {})
 
         tasks = [_one(sym, interval, size) for sym, interval, size in reqs]
-        out: Dict[str, Dict] = {}
+        out: dict[str, dict] = {}
         for coro in asyncio.as_completed(tasks):
             try:
                 k, v = await coro
@@ -1516,6 +2148,7 @@ class APIManager:
         # Check app configuration if available
         try:
             from wsapp_gui.config import app_config  # type: ignore
+
             tg_enabled = bool(app_config.get('integrations.telegram.enabled', False))
             include_tech = bool(app_config.get('integrations.telegram.include_technical', True))
             allow_info = bool(app_config.get('notifications.info', False))
@@ -1545,13 +2178,17 @@ class APIManager:
                 idx = None
                 is_first = False
                 with self._tech_buffer_lock:
-                    is_first = (len(self._tech_buffer) == 0)
+                    is_first = len(self._tech_buffer) == 0
                     # Append buffer item as not-yet-sent
-                    self._tech_buffer.append([time.time(), str(signal_code), str(signal_message), level or 'INFO', False])
+                    self._tech_buffer.append(
+                        [time.time(), str(signal_code), str(signal_message), level or 'INFO', False]
+                    )
                     idx = len(self._tech_buffer) - 1
                     if self._tech_flush_timer is None or not self._tech_flush_timer.is_alive():
                         delay = max(1.0, float(getattr(self, '_tech_coalesce_window_sec', 15.0)))
-                        self._tech_flush_timer = threading.Timer(delay, self._flush_tech_buffer_safe)
+                        self._tech_flush_timer = threading.Timer(
+                            delay, self._flush_tech_buffer_safe
+                        )
                         self._tech_flush_timer.daemon = True
                         self._tech_flush_timer.start()
                 # If first in window, send immediately; others are coalesced
@@ -1579,9 +2216,7 @@ class APIManager:
         # Route WARN/ALERT by default
         if level in ["WARN", "ALERT"]:
             ok = self.telegram.send_alert(
-                title=f"Portfolio Alert - {signal_code}",
-                message=signal_message,
-                level=level
+                title=f"Portfolio Alert - {signal_code}", message=signal_message, level=level
             )
             if ok:
                 self._notify_last_ts[code_key] = time.time()
@@ -1602,7 +2237,7 @@ class APIManager:
     def _flush_tech_buffer_safe(self) -> None:
         """Thread-safe flush wrapper for TECH_* buffer triggered by timer."""
         try:
-            items: List[list] = []
+            items: list[list] = []
             with self._tech_buffer_lock:
                 if not self._tech_buffer:
                     return
@@ -1620,7 +2255,7 @@ class APIManager:
                 title = f"Portfolio Alerts - Technical Signals ({n})"
                 # Sort by time
                 unsent.sort(key=lambda x: x[0])
-                lines: List[str] = []
+                lines: list[str] = []
                 for _ts, code, msg, lvl, *_ in unsent:
                     short_msg = (msg or '').strip()
                     if len(short_msg) > 220:
@@ -1636,14 +2271,14 @@ class APIManager:
         except Exception:
             pass
 
-    def get_enhanced_quote(self, symbol: str) -> Dict:
+    def get_enhanced_quote(self, symbol: str) -> dict:
         """Get enhanced quote with news and technical data."""
         result = {
             'symbol': symbol,
             'quote': None,
             'news': [],
             'technical': None,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.now().isoformat(),
         }
 
         # Basic quote (with fallback)
@@ -1659,7 +2294,7 @@ class APIManager:
         return result
 
     # ----------------- Market Movers (Canada) -----------------
-    def get_market_movers_ca(self, top_n: int = 10) -> Dict[str, List[Dict]]:
+    def get_market_movers_ca(self, top_n: int = 10) -> dict[str, list[dict]]:
         """Return top gainers, losers, and most actives for Canadian market.
 
         Uses Yahoo predefined screeners with region=CA. Returns dict with keys:
@@ -1671,7 +2306,15 @@ class APIManager:
         losers = self.yahoo.get_predefined_screener('day_losers', count=top_n, region='CA')
         actives = self.yahoo.get_predefined_screener('most_actives', count=top_n, region='CA')
         # Opportunities heuristic: strong losers (<= -5%) or large absolute change and decent volume
-        opps = [q for q in losers if (q.get('changePct', 0) <= -5.0 or q.get('change', 0) <= -0.5 or (q.get('changePct', 0) < 0 and q.get('volume', 0) > 200000))]
+        opps = [
+            q
+            for q in losers
+            if (
+                q.get('changePct', 0) <= -5.0
+                or q.get('change', 0) <= -0.5
+                or (q.get('changePct', 0) < 0 and q.get('volume', 0) > 200000)
+            )
+        ]
         # Sort losers/opps ascending by changePct, gainers descending
         gainers.sort(key=lambda x: x.get('changePct', 0), reverse=True)
         losers.sort(key=lambda x: x.get('changePct', 0))
@@ -1681,7 +2324,7 @@ class APIManager:
             'gainers': gainers[:top_n],
             'losers': losers[:top_n],
             'actives': actives[:top_n],
-            'opportunities': opps[:top_n//2 or 1],
+            'opportunities': opps[: top_n // 2 or 1],
         }
 
     # ----------------- Cache housekeeping (optional) -----------------
@@ -1690,24 +2333,36 @@ class APIManager:
             cache = getattr(self, '_cache', None)
             if not cache:
                 return
-            max_age = float(os.getenv('CACHE_MAX_AGE_SEC', str(7*24*3600)))
+            max_age = float(os.getenv('CACHE_MAX_AGE_SEC', str(7 * 24 * 3600)))
             max_screener = int(os.getenv('CACHE_MAX_SCREENER_ROWS', '100'))
-            do_vacuum = (os.getenv('CACHE_VACUUM_ON_PURGE', '1').strip().lower() in ('1', 'true', 'yes', 'on'))
+            do_vacuum = os.getenv('CACHE_VACUUM_ON_PURGE', '1').strip().lower() in (
+                '1',
+                'true',
+                'yes',
+                'on',
+            )
             deleted_old = cache.purge_older_than(max_age)
             deleted_scr = cache.purge_namespace_overflow('screener', max_screener)
             if do_vacuum:
                 cache.vacuum()
-            if os.getenv('CACHE_LOG_HOUSEKEEPING', '0').strip().lower() in ('1', 'true', 'yes', 'on'):
-                print(f"[cache] housekeeping: deleted_old={deleted_old} deleted_screener={deleted_scr} vacuum={do_vacuum}")
+            if os.getenv('CACHE_LOG_HOUSEKEEPING', '0').strip().lower() in (
+                '1',
+                'true',
+                'yes',
+                'on',
+            ):
+                print(
+                    f"[cache] housekeeping: deleted_old={deleted_old} deleted_screener={deleted_scr} vacuum={do_vacuum}"
+                )
         except Exception:
             # best-effort only
             pass
 
     def _start_cache_housekeeping_thread(self) -> None:
         try:
-            interval = float(os.getenv('CACHE_HOUSEKEEPING_INTERVAL_SEC', str(24*3600)))
+            interval = float(os.getenv('CACHE_HOUSEKEEPING_INTERVAL_SEC', str(24 * 3600)))
         except Exception:
-            interval = 24*3600.0
+            interval = 24 * 3600.0
 
         def _loop():
             # run once at start
@@ -1735,4 +2390,10 @@ class APIManager:
             pass
 
 
-__all__ = ['NewsAPIClient', 'AlphaVantageClient', 'YahooFinanceClient', 'TelegramNotifier', 'APIManager']
+__all__ = [
+    'NewsAPIClient',
+    'AlphaVantageClient',
+    'YahooFinanceClient',
+    'TelegramNotifier',
+    'APIManager',
+]

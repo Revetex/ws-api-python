@@ -33,7 +33,7 @@ class WSApiTest:
 
         # If you want, you can set a custom User-Agent for the requests to the WealthSimple API:
         WealthsimpleAPI.set_user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36")
-    
+
         # 2. If it's the first time you run this, create a new session using the username & password (and TOTP answer, if needed). Do NOT save those infos in your code!
         username = input("Wealthsimple username (email): ")
         session = keyring.get_password(f"{keyring_service_name}.{username}", "session")
@@ -64,11 +64,11 @@ class WSApiTest:
                     print("Login failed. Try again.")
                     username = None
                     password = None
-    
+
         # 3. Use the session object to instantiate the API object
         ws = WealthsimpleAPI.from_token(session, persist_session_fct, username)
         # persist_session_fct is needed here too, because the session may be updated if the access token expired, and thus this function will be called to save the new session
-        
+
         # Optionally define functions to cache market data, if you want transactions' descriptions and accounts balances to show the security's symbol instead of its ID
         # eg. sec-s-e7947deb977341ff9f0ddcf13703e9a6 => TSX:XEQT
         def sec_info_getter_fn(ws_security_id: str):
@@ -82,7 +82,7 @@ class WSApiTest:
             json.dump(market_data, open(cache_file_path, 'w'))
             return market_data
         ws.set_security_market_data_cache(sec_info_getter_fn, sec_info_setter_fn)
-        
+
         # 4. Use the API object to access your WS accounts
         accounts = ws.get_accounts()
 
@@ -93,7 +93,7 @@ class WSApiTest:
             deposits = float(hf['netDepositsV2']['amount'])
             gains = value - deposits
             print(f"  - {hf['date']} = ${value:,.0f} - {deposits:,.0f} (deposits) = {gains:,.0f} (gains)")
-        
+
         for account in accounts:
             print(f"Account: {account['description']} ({account['number']})")
             if account['description'] == account['unifiedAccountType']:
@@ -102,31 +102,31 @@ class WSApiTest:
 
             if account['currency'] == 'CAD':
                 value = account['financials']['currentCombined']['netLiquidationValue']['amount']
-                print(f"  Net worth: {value} {account['currency']}")    
+                print(f"  Net worth: {value} {account['currency']}")
             # Note: For USD accounts, value is the CAD value converted to USD
             # For USD accounts, only the balance & positions are relevant
-    
+
             # Cash and positions balances
             balances = ws.get_account_balances(account['id'])
             cash_balance_key = 'sec-c-usd' if account['currency'] == 'USD' else 'sec-c-cad'
             cash_balance = float(balances.get(cash_balance_key, 0))
             print(f"  Available (cash) balance: {cash_balance} {account['currency']}")
-    
+
             if len(balances) > 1:
                 print("  Assets:")
                 for security, bal in balances.items():
                     if security in ['sec-c-cad', 'sec-c-usd']:
                         continue
                     print(f"  - {security} x {bal}")
-    
+
             print("  Historical Value & Gains:")
-            historical_fins = ws.get_account_historical_financials(account['id'], account['currency'])            
+            historical_fins = ws.get_account_historical_financials(account['id'], account['currency'])
             for hf in historical_fins:
                 value = hf['netLiquidationValueV2']['cents'] / 100
                 deposits = hf['netDepositsV2']['cents'] / 100
                 gains = value - deposits
                 print(f"  - {hf['date']} = ${value:,.0f} - {deposits:,.0f} (deposits) = {gains:,.0f} (gains)")
-            
+
             # Fetch activities (transactions)
             acts = ws.get_activities(account['id'])
             if acts:
@@ -136,7 +136,7 @@ class WSApiTest:
                 for act in acts:
                     if act['type'] == 'DIY_BUY':
                         act['amountSign'] = 'negative'
-        
+
                     # Print transaction details
                     print(
                         f"  - [{datetime.strptime(act['occurredAt'].replace(':', ''), '%Y-%m-%dT%H%M%S.%f%z')}] [{act['canonicalId']}] {act['description']} "
@@ -145,7 +145,7 @@ class WSApiTest:
                     if act['description'] == f"{act['type']}: {act['subType']}":
                         # This is an "unknown" transaction, for which description is generic; please open an issue on https://github.com/gboudreau/ws-api-python/issues and include the following:
                         print(f"    Unknown activity: {act}")
-    
+
             print()
 
 if __name__ == "__main__":
@@ -187,20 +187,25 @@ If you use the optional Tkinter GUI under `wsapp_gui/`, a few UX features and Te
     - Include technical alerts: When enabled, INFO-level `TECH_*` alerts (e.g., SMA crosses) are routed to Telegram.
     - TECH_* format: Choose how `TECH_*` alerts are formatted in Telegram: `plain` or `emoji-rich`.
 
-## Enhanced AI Advisor (optional)
+Enhanced AI Advisor (optional)
+--------------------------------
 
 - What it is: An on-device helper that summarizes portfolio metrics and suggests conservative, safety-aware actions (no live orders).
 - How to enable:
     - In the app: Preferences > Intelligence Artificielle > "Activer le Conseiller (Enhanced AI)".
     - Or via environment variable before launching the app:
-        - Windows PowerShell:
-            ```powershell
-            $env:AI_ENHANCED = "1"; python .\gui.py
-            ```
-        - macOS/Linux bash:
-            ```bash
-            AI_ENHANCED=1 python gui.py
-            ```
+
+    - Windows PowerShell:
+
+        ```powershell
+        $env:AI_ENHANCED = "1"; python .\\gui.py
+        ```
+
+    - macOS/Linux bash:
+
+        ```bash
+        AI_ENHANCED=1 python gui.py
+        ```
 - Where to use: Strategy tab > "Conseiller (AI)" section. Click "Analyser maintenant" to generate insights.
 - Notes: Feature-flagged; safe by default. PII is lightly masked in outputs.
 Configuration keys (auto-persisted to `ws_app_config.json` when changed in the UI):
@@ -293,3 +298,34 @@ Silent GUI launcher (Windows)
 -----------------------------
 
 Use `run_gui_silent.bat` to start the GUI without an attached console window. It prefers pythonw from `.venv`/`venv`, otherwise falls back to a VBScript shim.
+
+Offline and log-noise tips
+--------------------------
+
+When working offline or behind restrictive networks, you can reduce console noise and prefer offline-friendly providers:
+
+- Prefer Yahoo as market data provider (no API key required):
+
+        - Windows PowerShell:
+
+            ```powershell
+            $env:MARKET_DATA_PROVIDER = "yahoo"; python .\\gui.py
+            ```
+
+        - macOS/Linux bash:
+
+            ```bash
+            MARKET_DATA_PROVIDER=yahoo python ./gui.py
+            ```
+
+- Silence external API error logs unless debugging:
+
+    - Alpha Vantage: set `ALPHA_LOG_ERRORS=0` (default 0; set 1 to enable)
+    - News API: set `NEWS_LOG_ERRORS=0` (default 0; set 1 to enable)
+    - Yahoo: set `YAHOO_LOG_ERRORS=0` (default 0; set 1 to enable)
+
+- Keep compatibility with legacy requests session (default): `WSAPP_HTTPCLIENT_ONLY=0`
+
+Caching notes:
+
+- Quotes/series/news are cached on success; if a provider fails, the app serves stale data (when available) instead of erroring.

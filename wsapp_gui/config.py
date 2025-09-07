@@ -7,7 +7,7 @@ Améliorations:
 
 import json
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any
 
 
 class AppConfig:
@@ -15,22 +15,22 @@ class AppConfig:
 
     def __init__(self, config_file: str = "ws_app_config.json"):
         self.config_file = Path(config_file)
-        self.config: Dict[str, Any] = {}
+        self.config: dict[str, Any] = {}
         self.load_config()
 
     def load_config(self) -> None:
         """Charge la configuration depuis le fichier."""
         if self.config_file.exists():
             try:
-                with open(self.config_file, 'r', encoding='utf-8') as f:
+                with open(self.config_file, encoding='utf-8') as f:
                     self.config = json.load(f)
-            except (json.JSONDecodeError, IOError):
+            except (OSError, json.JSONDecodeError):
                 self.config = {}
 
         # Valeurs par défaut
         self._set_defaults()
 
-    def _merge_defaults(self, cfg: Dict[str, Any], defaults: Dict[str, Any]) -> None:
+    def _merge_defaults(self, cfg: dict[str, Any], defaults: dict[str, Any]) -> None:
         """Fusionne récursivement les valeurs par défaut dans la config (ajoute uniquement les clés manquantes)."""
         for key, def_val in defaults.items():
             if key not in cfg:
@@ -41,15 +41,25 @@ class AppConfig:
 
     def _set_defaults(self) -> None:
         """Définit les valeurs par défaut (non destructif)."""
-        defaults: Dict[str, Any] = {
+        defaults: dict[str, Any] = {
             'theme': 'light',
+            'ui': {
+                'font': {
+                    'size': 10,
+                    'family': 'Segoe UI',
+                },
+            },
+            'media': {
+                'cache_ttl_sec': 3600,
+                'detail_logo_px': 64,
+            },
             'notifications': {
                 'info': False,
                 'warn': True,
                 'alert': True,
             },
             'ai': {
-                'enhanced': False,  # Active le Conseiller (Enhanced AI)
+                'enhanced': True,  # Active le Conseiller (Enhanced AI)
             },
             'window': {
                 'width': 1200,
@@ -81,7 +91,7 @@ class AppConfig:
         try:
             with open(self.config_file, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, indent=2, ensure_ascii=False)
-        except IOError as e:
+        except OSError as e:
             print(f"Erreur sauvegarde config: {e}")
 
     def get(self, key: str, default: Any = None) -> Any:

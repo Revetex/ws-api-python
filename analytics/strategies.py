@@ -1,18 +1,20 @@
 from __future__ import annotations
-from typing import Dict, List, Optional, Sequence
-from .indicators import sma, rsi, macd, bollinger
+
+from collections.abc import Sequence
+
+from .indicators import bollinger, macd, rsi, sma
 
 
 class Signal:
     __slots__ = ("index", "kind", "reason", "confidence")
 
-    def __init__(self, index: int, kind: str, reason: str, confidence: Optional[float] = None):
+    def __init__(self, index: int, kind: str, reason: str, confidence: float | None = None):
         self.index = index
         self.kind = kind  # 'buy' | 'sell'
         self.reason = reason
         self.confidence = confidence  # 0..1
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         d = {"i": self.index, "kind": self.kind, "reason": self.reason}
         if self.confidence is not None:
             d["conf"] = round(float(self.confidence), 4)
@@ -22,7 +24,9 @@ class Signal:
 class MovingAverageCrossStrategy:
     """Simple MA crossover: buy when fast crosses above slow, sell when crosses below."""
 
-    def __init__(self, fast: int = 10, slow: int = 30, min_bandwidth: float = 0.0, bb_window: int = 20):
+    def __init__(
+        self, fast: int = 10, slow: int = 30, min_bandwidth: float = 0.0, bb_window: int = 20
+    ):
         if fast >= slow:
             raise ValueError("fast must be < slow")
         self.fast = fast
@@ -30,12 +34,12 @@ class MovingAverageCrossStrategy:
         self.min_bandwidth = float(min_bandwidth)
         self.bb_window = int(bb_window)
 
-    def generate(self, closes: Sequence[float]) -> List[Signal]:
+    def generate(self, closes: Sequence[float]) -> list[Signal]:
         fast_ma = sma(closes, self.fast)
         slow_ma = sma(closes, self.slow)
         up, mid, lo = bollinger(closes, window=self.bb_window)
-        sigs: List[Signal] = []
-        prev_diff: Optional[float] = None
+        sigs: list[Signal] = []
+        prev_diff: float | None = None
         for i in range(len(closes)):
             f = fast_ma[i]
             s = slow_ma[i]
@@ -70,17 +74,24 @@ class MovingAverageCrossStrategy:
 class RSIReversionStrategy:
     """Buy when RSI < low, sell when RSI > high."""
 
-    def __init__(self, period: int = 14, low: int = 30, high: int = 70, min_bandwidth: float = 0.0, bb_window: int = 20):
+    def __init__(
+        self,
+        period: int = 14,
+        low: int = 30,
+        high: int = 70,
+        min_bandwidth: float = 0.0,
+        bb_window: int = 20,
+    ):
         self.period = period
         self.low = low
         self.high = high
         self.min_bandwidth = float(min_bandwidth)
         self.bb_window = int(bb_window)
 
-    def generate(self, closes: Sequence[float]) -> List[Signal]:
+    def generate(self, closes: Sequence[float]) -> list[Signal]:
         r = rsi(closes, self.period)
         up, mid, lo = bollinger(closes, window=self.bb_window)
-        sigs: List[Signal] = []
+        sigs: list[Signal] = []
         for i, v in enumerate(r):
             if v is None:
                 continue
@@ -95,10 +106,14 @@ class RSIReversionStrategy:
                     continue
             if v < self.low:
                 conf = min(1.0, (self.low - v) / 20.0)
-                sigs.append(Signal(i, 'buy', f"RSI {v:.1f} < {self.low} [conf {conf*100:.0f}%]", conf))
+                sigs.append(
+                    Signal(i, 'buy', f"RSI {v:.1f} < {self.low} [conf {conf*100:.0f}%]", conf)
+                )
             elif v > self.high:
                 conf = min(1.0, (v - self.high) / 20.0)
-                sigs.append(Signal(i, 'sell', f"RSI {v:.1f} > {self.high} [conf {conf*100:.0f}%]", conf))
+                sigs.append(
+                    Signal(i, 'sell', f"RSI {v:.1f} > {self.high} [conf {conf*100:.0f}%]", conf)
+                )
         return sigs
 
 
@@ -109,7 +124,16 @@ class ConfluenceStrategy:
     - Sell when MA(fast) crosses below MA(slow) AND RSI <= rsi_sell AND MACD hist < 0
     """
 
-    def __init__(self, fast: int = 10, slow: int = 30, rsi_period: int = 14, rsi_buy: int = 55, rsi_sell: int = 45, min_bandwidth: float = 0.0, bb_window: int = 20):
+    def __init__(
+        self,
+        fast: int = 10,
+        slow: int = 30,
+        rsi_period: int = 14,
+        rsi_buy: int = 55,
+        rsi_sell: int = 45,
+        min_bandwidth: float = 0.0,
+        bb_window: int = 20,
+    ):
         if fast >= slow:
             raise ValueError("fast must be < slow")
         if not (0 < rsi_sell < rsi_buy < 100):
@@ -122,14 +146,14 @@ class ConfluenceStrategy:
         self.min_bandwidth = float(min_bandwidth)
         self.bb_window = int(bb_window)
 
-    def generate(self, closes: Sequence[float]) -> List[Signal]:
+    def generate(self, closes: Sequence[float]) -> list[Signal]:
         fast_ma = sma(closes, self.fast)
         slow_ma = sma(closes, self.slow)
         r = rsi(closes, self.rsi_period)
         _macd, _sig, hist = macd(closes)
         up, mid, lo = bollinger(closes, window=self.bb_window)
-        sigs: List[Signal] = []
-        prev_diff: Optional[float] = None
+        sigs: list[Signal] = []
+        prev_diff: float | None = None
         for i in range(len(closes)):
             f = fast_ma[i]
             s = slow_ma[i]
@@ -158,7 +182,14 @@ class ConfluenceStrategy:
                     dist_ma = min(1.0, abs(diff) / s) if s else 0.0
                     dist_rsi = min(1.0, (rv - self.rsi_buy) / 20.0)
                     conf = min(1.0, base * 0.6 + 0.2 * dist_ma + 0.2 * dist_rsi)
-                    sigs.append(Signal(i, 'buy', f"Confluence: MA{self.fast}/{self.slow} up + RSI {rv:.1f} + MACD>0 [conf {conf*100:.0f}%]", conf))
+                    sigs.append(
+                        Signal(
+                            i,
+                            'buy',
+                            f"Confluence: MA{self.fast}/{self.slow} up + RSI {rv:.1f} + MACD>0 [conf {conf*100:.0f}%]",
+                            conf,
+                        )
+                    )
                 # Cross down with confirmations
                 elif prev_diff >= 0 and diff < 0 and rv <= self.rsi_sell and h < 0:
                     confirms = 3
@@ -166,7 +197,14 @@ class ConfluenceStrategy:
                     dist_ma = min(1.0, abs(diff) / s) if s else 0.0
                     dist_rsi = min(1.0, (self.rsi_sell - rv) / 20.0)
                     conf = min(1.0, base * 0.6 + 0.2 * dist_ma + 0.2 * dist_rsi)
-                    sigs.append(Signal(i, 'sell', f"Confluence: MA{self.fast}/{self.slow} down + RSI {rv:.1f} + MACD<0 [conf {conf*100:.0f}%]", conf))
+                    sigs.append(
+                        Signal(
+                            i,
+                            'sell',
+                            f"Confluence: MA{self.fast}/{self.slow} down + RSI {rv:.1f} + MACD<0 [conf {conf*100:.0f}%]",
+                            conf,
+                        )
+                    )
             prev_diff = diff
         return sigs
 

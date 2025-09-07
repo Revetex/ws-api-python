@@ -1,16 +1,17 @@
 """Module de gestion de l'authentification pour l'application Wealthsimple."""
 
 from __future__ import annotations
+
 import threading
 from typing import TYPE_CHECKING
 
+from run_ws import load_session, save_session
 from ws_api import WealthsimpleAPI
 from ws_api.exceptions import (
-    OTPRequiredException,
     LoginFailedException,
+    OTPRequiredException,
     WSApiException,
 )
-from run_ws import load_session, save_session
 
 if TYPE_CHECKING:
     from .app import WSApp  # updated reference

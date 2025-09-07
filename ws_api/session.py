@@ -1,5 +1,5 @@
-from abc import ABC
 import json
+from abc import ABC
 
 
 class OAuthSession(ABC):

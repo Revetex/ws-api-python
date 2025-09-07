@@ -1,8 +1,10 @@
 from __future__ import annotations
-from typing import Iterable
-from datetime import datetime
+
 import tkinter as tk
+from collections.abc import Iterable
+from datetime import datetime
 from tkinter import ttk
+
 from ai_agent import AIAgent, Signal
 
 

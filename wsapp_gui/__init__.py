@@ -2,20 +2,21 @@
 
 Expose WSApp and modular managers.
 """
+
+from .agent_ui import AgentUI
 from .app import WSApp
 from .charts import ChartController
-from .agent_ui import AgentUI
-from .theming import PALETTES, apply_palette
+from .chat_manager import ChatManager
 from .config import app_config
+from .export_manager import ExportManager
 
 # Gestionnaires modulaires
 from .login_manager import LoginManager
+from .news_manager import NewsManager
 from .portfolio_manager import PortfolioManager
 from .search_manager import SearchManager
-from .news_manager import NewsManager
-from .chat_manager import ChatManager
+from .theming import PALETTES, apply_palette
 from .ui_builder import UIBuilder
-from .export_manager import ExportManager
 
 __all__ = [
     "WSApp",
@@ -30,5 +31,5 @@ __all__ = [
     "NewsManager",
     "ChatManager",
     "UIBuilder",
-    "ExportManager"
+    "ExportManager",
 ]
