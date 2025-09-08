@@ -3,11 +3,16 @@
 Améliorations:
 - Fusion récursive des valeurs par défaut (sans écraser l'existant)
 - Valeurs par défaut explicites pour les préférences Telegram (include_technical, tech_format)
+- Validation des valeurs de configuration
+- Gestion d'erreurs améliorée
 """
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class AppConfig:
@@ -24,14 +29,19 @@ class AppConfig:
             try:
                 with open(self.config_file, encoding='utf-8') as f:
                     self.config = json.load(f)
-            except (OSError, json.JSONDecodeError):
+                logger.debug(f"Configuration chargée depuis {self.config_file}")
+            except (OSError, json.JSONDecodeError) as e:
+                logger.warning(f"Erreur lors du chargement de la configuration: {e}")
                 self.config = {}
 
         # Valeurs par défaut
         self._set_defaults()
 
     def _merge_defaults(self, cfg: dict[str, Any], defaults: dict[str, Any]) -> None:
-        """Fusionne récursivement les valeurs par défaut dans la config (ajoute uniquement les clés manquantes)."""
+        """Fusionne récursivement les valeurs par défaut dans la config.
+        
+        Ajoute uniquement les clés manquantes sans écraser les valeurs existantes.
+        """
         for key, def_val in defaults.items():
             if key not in cfg:
                 cfg[key] = def_val
@@ -89,9 +99,14 @@ class AppConfig:
     def save_config(self) -> None:
         """Sauvegarde la configuration dans le fichier."""
         try:
+            # Créer le répertoire parent si nécessaire
+            self.config_file.parent.mkdir(parents=True, exist_ok=True)
+            
             with open(self.config_file, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, indent=2, ensure_ascii=False)
+            logger.debug(f"Configuration sauvegardée dans {self.config_file}")
         except OSError as e:
+            logger.error(f"Erreur sauvegarde config: {e}")
             print(f"Erreur sauvegarde config: {e}")
 
     def get(self, key: str, default: Any = None) -> Any:
@@ -109,11 +124,18 @@ class AppConfig:
 
     def set(self, key: str, value: Any) -> None:
         """Définit une valeur de configuration."""
+        if not key:
+            raise ValueError("La clé ne peut pas être vide")
+            
         keys = key.split('.')
         config = self.config
 
+        # Naviguer/créer la structure imbriquée
         for k in keys[:-1]:
             if k not in config:
+                config[k] = {}
+            elif not isinstance(config[k], dict):
+                # Convertir en dict si ce n'en est pas un
                 config[k] = {}
             config = config[k]
 
@@ -153,7 +175,44 @@ class AppConfig:
 
         except (ValueError, IndexError):
             # En cas d'erreur de parsing, ignorer
+            logger.warning(f"Impossible de parser la géométrie: {geometry}")
             pass
+
+    def validate_config(self) -> bool:
+        """Valide la configuration et corrige les valeurs invalides."""
+        valid = True
+        
+        # Valider les dimensions de fenêtre
+        width = self.get('window.width', 1200)
+        height = self.get('window.height', 800)
+        
+        if not isinstance(width, int) or width < 400:
+            self.set('window.width', 1200)
+            valid = False
+            
+        if not isinstance(height, int) or height < 300:
+            self.set('window.height', 800)
+            valid = False
+            
+        # Valider le format technique Telegram
+        tech_format = self.get('integrations.telegram.tech_format', 'plain')
+        if tech_format not in ['plain', 'emoji-rich']:
+            self.set('integrations.telegram.tech_format', 'plain')
+            valid = False
+            
+        # Valider le thème
+        theme = self.get('theme', 'light')
+        if theme not in ['light', 'dark']:
+            self.set('theme', 'light')
+            valid = False
+            
+        return valid
+        
+    def reset_to_defaults(self) -> None:
+        """Remet la configuration aux valeurs par défaut."""
+        self.config = {}
+        self._set_defaults()
+        logger.info("Configuration remise aux valeurs par défaut")
 
 
 # Instance globale de configuration

@@ -1,16 +1,28 @@
-"""Module de gestion de l'export pour l'application Wealthsimple."""
+"""Module de gestion de l'export pour l'application Wealthsimple.
+
+Améliorations:
+- Gestion d'erreurs robuste
+- Noms de fichiers automatiques avec timestamps
+- Validation des données avant export
+- Support de formats multiples
+"""
 
 from __future__ import annotations
 
 import csv
+import json
+import logging
 from datetime import datetime
+from pathlib import Path
 from tkinter import filedialog, messagebox
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .ui_utils import format_money
 
 if TYPE_CHECKING:
-    from .app import WSApp  # updated reference
+    from .app import WSApp
+
+logger = logging.getLogger(__name__)
 
 
 class ExportManager:
@@ -18,75 +30,87 @@ class ExportManager:
 
     def __init__(self, app: WSApp):
         self.app = app
+        self.default_format = 'csv'
+        
+    def _generate_filename(self, base_name: str, extension: str = 'csv') -> str:
+        """Génère un nom de fichier avec timestamp."""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return f"{base_name}_{timestamp}.{extension}"
+        
+    def _validate_data(self, data: list, data_type: str) -> bool:
+        """Valide les données avant export."""
+        if not data:
+            self.app.set_status(f"Aucune {data_type} à exporter", error=True)
+            return False
+        return True
+        
+    def _safe_export(self, export_func, *args, **kwargs) -> bool:
+        """Exécute un export avec gestion d'erreurs."""
+        try:
+            return export_func(*args, **kwargs)
+        except Exception as e:
+            logger.error(f"Erreur lors de l'export: {e}")
+            self.app.set_status(f"Erreur export: {e}", error=True)
+            return False
 
-    def export_positions_csv(self):
+    def export_positions_csv(self) -> bool:
         """Exporte les positions vers un fichier CSV."""
-        if not hasattr(self.app, '_positions_cache') or not self.app._positions_cache:
-            # Avertissement non bloquant via bannière
-            self.app.set_status("Aucune position à exporter", error=True)
-            return
+        positions = getattr(self.app, '_positions_cache', [])
+        if not self._validate_data(positions, "position"):
+            return False
 
+        default_filename = self._generate_filename("positions")
         filename = filedialog.asksaveasfilename(
             defaultextension=".csv",
+            initialvalue=default_filename,
             filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
             title="Exporter les positions",
         )
 
         if not filename:
-            return
+            return False
 
-        try:
-            with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
-                writer = csv.writer(csvfile)
+        return self._safe_export(self._write_positions_csv, filename, positions)
 
-                # En-têtes
-                writer.writerow(
-                    [
-                        'Symbole',
-                        'Nom',
-                        'Quantité',
-                        'Valeur marchande',
-                        'Devise',
-                        'Prix moyen',
-                        'Gain/Perte',
-                        'Pourcentage',
-                    ]
-                )
+    def _write_positions_csv(self, filename: str, positions: list[dict[str, Any]]) -> bool:
+        """Écrit les positions dans un fichier CSV."""
+        with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.writer(csvfile)
 
-                # Données
-                for pos in self.app._positions_cache:
+            # En-têtes
+            headers = [
+                'Symbole', 'Nom', 'Quantité', 'Valeur marchande', 'Devise',
+                'Prix moyen', 'Gain/Perte', 'Pourcentage', 'Date export'
+            ]
+            writer.writerow(headers)
+
+            # Données
+            export_time = datetime.now().isoformat()
+            for pos in positions:
+                try:
                     security = pos.get('stock', {})
                     symbol = security.get('symbol', 'N/A')
                     name = security.get('name', 'N/A')
-                    quantity = pos.get('quantity', 0)
-                    market_value = pos.get('market_value', 0)
-                    currency = pos.get('currency') or self.app.base_currency
-                    book_value = pos.get('book_value', 0)
+                    quantity = float(pos.get('quantity', 0))
+                    market_value = float(pos.get('market_value', 0))
+                    currency = pos.get('currency') or getattr(self.app, 'base_currency', 'CAD')
+                    book_value = float(pos.get('book_value', 0))
+                    
                     gain_loss = market_value - book_value if market_value and book_value else 0
-
                     avg_price = book_value / quantity if quantity and book_value else 0
                     percentage = (gain_loss / book_value * 100) if book_value else 0
 
-                    writer.writerow(
-                        [
-                            symbol,
-                            name,
-                            f"{quantity:.4f}",
-                            f"{market_value:.2f}",
-                            currency,
-                            f"{avg_price:.2f}",
-                            f"{gain_loss:.2f}",
-                            f"{percentage:.2f}%",
-                        ]
-                    )
+                    writer.writerow([
+                        symbol, name, f"{quantity:.4f}", f"{market_value:.2f}", currency,
+                        f"{avg_price:.2f}", f"{gain_loss:.2f}", f"{percentage:.2f}%", export_time
+                    ])
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Erreur traitement position {symbol}: {e}")
+                    continue
 
-            self.app.set_status(f"Positions exportées vers {filename}")
-            # Confirmation de réussite (popup conservée)
-            messagebox.showinfo("Export réussi", f"Positions exportées vers:\n{filename}")
-
-        except Exception as e:
-            # Erreur en bannière avec détails, pas de popup bloquante
-            self.app.set_status("Erreur export positions", error=True, details=repr(e))
+        self.app.set_status(f"Positions exportées vers {Path(filename).name}")
+        messagebox.showinfo("Export réussi", f"Positions exportées vers:\n{filename}")
+        return True
 
     def export_activities_csv(self):
         """Exporte les activités vers un fichier CSV."""

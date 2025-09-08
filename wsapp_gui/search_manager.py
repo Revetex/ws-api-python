@@ -1,12 +1,23 @@
-"""Module de gestion de la recherche de titres pour l'application Wealthsimple."""
+"""Module de gestion de la recherche de titres pour l'application Wealthsimple.
+
+Améliorations:
+- Gestion d'erreurs robuste
+- Cache des résultats de recherche
+- Validation des entrées
+- Interface utilisateur améliorée
+"""
 
 from __future__ import annotations
 
+import logging
 import threading
-from typing import TYPE_CHECKING
+from datetime import datetime, timedelta
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .app import WSApp  # updated reference
+    from .app import WSApp
+
+logger = logging.getLogger(__name__)
 
 
 class SearchManager:
@@ -14,49 +25,159 @@ class SearchManager:
 
     def __init__(self, app: WSApp):
         self.app = app
+        self._search_cache: dict[str, tuple[list[dict[str, Any]], datetime]] = {}
+        self._cache_ttl = timedelta(minutes=30)  # Cache valide 30 minutes
+        self._last_query = ""
+        
+    def _is_cache_valid(self, query: str) -> bool:
+        """Vérifie si le cache est valide pour une requête."""
+        if query not in self._search_cache:
+            return False
+        _, timestamp = self._search_cache[query]
+        return datetime.now() - timestamp < self._cache_ttl
+        
+    def _get_cached_results(self, query: str) -> list[dict[str, Any]] | None:
+        """Récupère les résultats en cache."""
+        if self._is_cache_valid(query):
+            results, _ = self._search_cache[query]
+            return results
+        return None
+        
+    def _cache_results(self, query: str, results: list[dict[str, Any]]) -> None:
+        """Met en cache les résultats de recherche."""
+        self._search_cache[query] = (results, datetime.now())
+        # Nettoyer le cache si trop volumineux
+        if len(self._search_cache) > 100:
+            oldest_key = min(self._search_cache.keys(), 
+                           key=lambda k: self._search_cache[k][1])
+            del self._search_cache[oldest_key]
 
     def search_securities(self) -> None:
-        """Lance une recherche de titres."""
+        """Lance une recherche de titres avec cache et validation."""
+        if not hasattr(self.app, 'var_search'):
+            logger.error("Variable de recherche non initialisée")
+            return
+            
         query = self.app.var_search.get().strip()
         if not query:
             self.app.set_status("Veuillez entrer un terme de recherche", error=True)
             return
 
-        if not self.app.api:
-            self.app.set_status("Non connecté", error=True)
+        # Validation de la requête
+        if len(query) < 2:
+            self.app.set_status("Le terme de recherche doit contenir au moins 2 caractères", error=True)
             return
 
+        if not self.app.api:
+            self.app.set_status("Non connecté à l'API", error=True)
+            return
+
+        # Vérifier le cache
+        cached_results = self._get_cached_results(query.lower())
+        if cached_results is not None:
+            self.app._search_results = cached_results
+            self._update_search_results()
+            self.app.set_status(f"{len(cached_results)} résultat(s) (cache)")
+            return
+
+        self._last_query = query
         self.app.set_status(f"Recherche de '{query}'...")
+        self._disable_search_ui()
 
         def worker():
             try:
                 results = self.app.api.search_security(query)
+                
+                # Valider les résultats
+                if not isinstance(results, list):
+                    results = []
+                    
+                # Mettre en cache
+                self._cache_results(query.lower(), results)
+                
                 self.app._search_results = results
-                self.app.after(0, self._update_search_results)
-                self.app.set_status(f"{len(results)} résultat(s) trouvé(s)")
+                self.app.after(0, self._on_search_complete)
+                
+                status_msg = f"{len(results)} résultat(s) trouvé(s)"
+                if len(results) == 0:
+                    status_msg += " - essayez un terme différent"
+                self.app.after(0, lambda: self.app.set_status(status_msg))
+                
             except Exception as e:
-                self.app.set_status(f"Erreur de recherche: {e}", error=True)
+                logger.error(f"Erreur de recherche pour '{query}': {e}")
+                self.app.after(0, lambda: self._on_search_error(str(e)))
 
         threading.Thread(target=worker, daemon=True).start()
+        
+    def _disable_search_ui(self) -> None:
+        """Désactive temporairement l'interface de recherche."""
+        if hasattr(self.app, 'btn_search'):
+            self.app.btn_search.configure(state='disabled', text='Recherche...')
+            
+    def _enable_search_ui(self) -> None:
+        """Réactive l'interface de recherche."""
+        if hasattr(self.app, 'btn_search'):
+            self.app.btn_search.configure(state='normal', text='Rechercher')
+            
+    def _on_search_complete(self) -> None:
+        """Callback appelé quand la recherche est terminée."""
+        self._update_search_results()
+        self._enable_search_ui()
+        
+    def _on_search_error(self, error_msg: str) -> None:
+        """Callback appelé en cas d'erreur de recherche."""
+        self.app.set_status(f"Erreur de recherche: {error_msg}", error=True)
+        self._enable_search_ui()
 
     def _update_search_results(self) -> None:
         """Met à jour l'affichage des résultats de recherche."""
         if not hasattr(self.app, 'tree_search'):
+            logger.warning("Widget tree_search non trouvé")
             return
 
         # Effacer les résultats précédents
         for item in self.app.tree_search.get_children():
             self.app.tree_search.delete(item)
 
-        # Ajouter les nouveaux résultats
-        for result in self.app._search_results:
-            stock = result.get('stock', {})
-            symbol = stock.get('symbol', 'N/A')
-            name = stock.get('name', 'N/A')
-            exchange = stock.get('primaryExchange', 'N/A')
-            buyable = "Oui" if result.get('buyable', False) else "Non"
+        # Vérifier que nous avons des résultats
+        if not hasattr(self.app, '_search_results') or not self.app._search_results:
+            self._set_search_details("Aucun résultat trouvé.")
+            return
 
-            self.app.tree_search.insert('', 'end', values=(symbol, name, exchange, buyable))
+        # Ajouter les nouveaux résultats avec gestion d'erreurs
+        valid_results = 0
+        for i, result in enumerate(self.app._search_results):
+            try:
+                stock = result.get('stock', {})
+                symbol = stock.get('symbol', 'N/A')
+                name = stock.get('name', 'N/A')
+                exchange = stock.get('primaryExchange', 'N/A')
+                buyable = "Oui" if result.get('buyable', False) else "Non"
+
+                # Insérer avec un tag pour coloration conditionnelle
+                tag = 'buyable' if result.get('buyable', False) else 'not_buyable'
+                item_id = self.app.tree_search.insert(
+                    '', 'end', 
+                    values=(symbol, name, exchange, buyable),
+                    tags=(tag,)
+                )
+                valid_results += 1
+                
+            except Exception as e:
+                logger.warning(f"Erreur formatage résultat {i}: {e}")
+                continue
+                
+        # Configurer les couleurs des tags
+        try:
+            self.app.tree_search.tag_configure('buyable', foreground='green')
+            self.app.tree_search.tag_configure('not_buyable', foreground='gray')
+        except Exception:
+            pass
+            
+        if valid_results == 0:
+            self._set_search_details("Aucun résultat valide trouvé.")
+        else:
+            self._set_search_details(f"{valid_results} résultat(s) affiché(s). Double-cliquez pour voir les détails.")
 
     def open_search_security_details(self) -> None:
         """Ouvre les détails d'un titre sélectionné dans les résultats de recherche."""
