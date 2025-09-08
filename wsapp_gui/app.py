@@ -2650,7 +2650,7 @@ class WSApp(tk.Tk):
             cash_str = format_money(cash, self.base_currency, with_symbol=False)
             total_value_str = format_money(total_value, self.base_currency, with_symbol=False)
             pnl_str = format_money(total_pnl, self.base_currency, with_symbol=False)
-            
+
             summary_text = (
                 f"Cash: {cash_str}  |  "
                 f"Valeur totale: {total_value_str}  |  "
@@ -4337,7 +4337,7 @@ class WSApp(tk.Tk):
                 bg = pal.get('accent_bg', bg)
                 fg = pal.get('accent', fg)
 
-            # Configure ttk styles for banner (frame + label) to ensure 
+            # Configure ttk styles for banner (frame + label) to ensure
             # background/foreground are applied
             try:
                 style = ttk.Style(self)
@@ -5319,7 +5319,7 @@ class WSApp(tk.Tk):
                             ),
                         )
                         gainer_count = len(gainers)
-                        loser_count = len(losers) 
+                        loser_count = len(losers)
                         active_count = len(actives)
                         status_msg = f"Mouvements (CA): +{gainer_count} / -{loser_count} / actifs {active_count}"
                         self.set_status(status_msg)

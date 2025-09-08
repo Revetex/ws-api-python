@@ -101,7 +101,7 @@ class AppConfig:
         try:
             # Créer le répertoire parent si nécessaire
             self.config_file.parent.mkdir(parents=True, exist_ok=True)
-            
+
             with open(self.config_file, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, indent=2, ensure_ascii=False)
             logger.debug(f"Configuration sauvegardée dans {self.config_file}")
@@ -126,7 +126,7 @@ class AppConfig:
         """Définit une valeur de configuration."""
         if not key:
             raise ValueError("La clé ne peut pas être vide")
-            
+
         keys = key.split('.')
         config = self.config
 
@@ -181,33 +181,33 @@ class AppConfig:
     def validate_config(self) -> bool:
         """Valide la configuration et corrige les valeurs invalides."""
         valid = True
-        
+
         # Valider les dimensions de fenêtre
         width = self.get('window.width', 1200)
         height = self.get('window.height', 800)
-        
+
         if not isinstance(width, int) or width < 400:
             self.set('window.width', 1200)
             valid = False
-            
+
         if not isinstance(height, int) or height < 300:
             self.set('window.height', 800)
             valid = False
-            
+
         # Valider le format technique Telegram
         tech_format = self.get('integrations.telegram.tech_format', 'plain')
         if tech_format not in ['plain', 'emoji-rich']:
             self.set('integrations.telegram.tech_format', 'plain')
             valid = False
-            
+
         # Valider le thème
         theme = self.get('theme', 'light')
         if theme not in ['light', 'dark']:
             self.set('theme', 'light')
             valid = False
-            
+
         return valid
-        
+
     def reset_to_defaults(self) -> None:
         """Remet la configuration aux valeurs par défaut."""
         self.config = {}

@@ -1,7 +1,23 @@
+"""Module de gestion des graphiques pour l'application Wealthsimple.
+
+Améliorations:
+- Gestion d'erreurs robuste
+- Configuration des graphiques améliorée  
+- Support de thèmes pour les graphiques
+- Optimisations de performance
+"""
+
 from __future__ import annotations
 
+import logging
 import threading
 from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .app import WSApp
+
+logger = logging.getLogger(__name__)
 
 try:
     # Matplotlib imports
@@ -60,44 +76,153 @@ except Exception:  # pragma: no cover
 
 
 class ChartController:
-    def __init__(self, app):
+    """Contrôleur pour les graphiques avec gestion améliorée."""
+
+    def __init__(self, app: WSApp):
         self.app = app
         # Matplotlib objects (lazy-created in init_widgets)
         self.figure = None
         self.ax = None
         self.canvas = None
         self.toolbar = None
-        # Cached plot state
+
+        # État du graphique en cache
         self._last_points: list[tuple[str, float]] = []
         self._last_title: str = ''
-        # Options
+        self._last_theme: str = 'light'
+
+        # Options configurables
         self._show_grid: bool = True
         self._show_sma: bool = False
         self._sma_window: int = 7
-        # Trade/signal markers overlay
-        # Each marker: {date: 'YYYY-MM-DD', kind: 'buy'|'sell', y?: float, label?: str}
-        self._markers: list[dict] = []
+        self._chart_style: str = 'default'
 
-    def init_widgets(self, parent):
+        # Marqueurs de trading/signaux
+        self._markers: list[dict[str, Any]] = []
+
+        # Configuration des couleurs par thème
+        self._theme_colors = {
+            'light': {
+                'bg': '#fafafa',
+                'grid': '#e0e0e0',
+                'text': '#333333',
+                'line': '#1f77b4',
+                'buy': '#2e7d32',
+                'sell': '#d32f2f'
+            },
+            'dark': {
+                'bg': '#2e2e2e',
+                'grid': '#404040',
+                'text': '#ffffff',
+                'line': '#66b3ff',
+                'buy': '#4caf50',
+                'sell': '#f44336'
+            }
+        }
+
+    def init_widgets(self, parent) -> Any | None:
+        """Initialise les widgets de graphique avec gestion d'erreurs."""
         if not HAS_MPL:
+            logger.warning("Matplotlib non disponible - graphiques désactivés")
             return None
-        # Slightly higher DPI and softer background
-        self.figure = Figure(figsize=(6, 3.6), dpi=120, facecolor='#fafafa')
-        self.ax = self.figure.add_subplot(111)
-        self.ax.set_title('Net Liquidation Value')
-        self.ax.set_xlabel('Date')
-        self.ax.set_ylabel('Valeur')
-        self.canvas = FigureCanvasTkAgg(self.figure, master=parent)
-        self.canvas.get_tk_widget().pack(fill='both', expand=True)
-        # Optional toolbar (only if packing parent wants it inline)
+
         try:
-            self.toolbar = NavigationToolbar2Tk(self.canvas, parent, pack_toolbar=False)  # type: ignore
-            self.toolbar.update()  # type: ignore
-            # Place toolbar at bottom of chart area
-            self.toolbar.pack(side='bottom', fill='x')  # type: ignore
-        except Exception:
+            # Déterminer le thème actuel
+            current_theme = getattr(self.app, '_theme', 'light')
+            colors = self._theme_colors.get(current_theme, self._theme_colors['light'])
+
+            # Créer la figure avec les bonnes couleurs
+            self.figure = Figure(
+                figsize=(6, 3.6),
+                dpi=120,
+                facecolor=colors['bg']
+            )
+            self.ax = self.figure.add_subplot(111)
+            self._configure_axes(colors)
+
+            # Canvas Tkinter
+            self.canvas = FigureCanvasTkAgg(self.figure, master=parent)
+            self.canvas.get_tk_widget().pack(fill='both', expand=True)
+
+            # Toolbar optionnelle
+            self._setup_toolbar(parent)
+
+            logger.debug("Widgets de graphique initialisés avec succès")
+            return self.canvas
+
+        except Exception as e:
+            logger.error(f"Erreur initialisation graphiques: {e}")
+            return None
+
+    def _configure_axes(self, colors: dict[str, str]) -> None:
+        """Configure les axes avec le thème approprié."""
+        if not self.ax:
+            return
+
+        self.ax.set_title('Net Liquidation Value', color=colors['text'])
+        self.ax.set_xlabel('Date', color=colors['text'])
+        self.ax.set_ylabel('Valeur', color=colors['text'])
+        self.ax.tick_params(colors=colors['text'])
+
+        # Grille
+        if self._show_grid:
+            self.ax.grid(True, color=colors['grid'], alpha=0.3)
+
+        # Couleur de fond
+        self.ax.set_facecolor(colors['bg'])
+
+    def _setup_toolbar(self, parent) -> None:
+        """Configure la barre d'outils."""
+        try:
+            self.toolbar = NavigationToolbar2Tk(self.canvas, parent, pack_toolbar=False)
+            self.toolbar.update()
+            self.toolbar.pack(side='bottom', fill='x')
+        except Exception as e:
+            logger.warning(f"Impossible de créer la toolbar: {e}")
             self.toolbar = None
-        return self.canvas
+
+    def update_theme(self, theme_name: str) -> None:
+        """Met à jour le thème du graphique."""
+        if not HAS_MPL or not self.figure or theme_name == self._last_theme:
+            return
+
+        try:
+            colors = self._theme_colors.get(theme_name, self._theme_colors['light'])
+            self.figure.patch.set_facecolor(colors['bg'])
+            self._configure_axes(colors)
+            self._last_theme = theme_name
+
+            # Redessiner si nous avons des données
+            if self._last_points:
+                self.refresh_display()
+
+        except Exception as e:
+            logger.error(f"Erreur mise à jour thème graphique: {e}")
+
+    def configure_chart_options(self, show_grid: bool = None,
+                               show_sma: bool = None,
+                               sma_window: int = None) -> None:
+        """Configure les options d'affichage du graphique."""
+        if show_grid is not None:
+            self._show_grid = show_grid
+        if show_sma is not None:
+            self._show_sma = show_sma
+        if sma_window is not None and sma_window > 0:
+            self._sma_window = sma_window
+
+        # Appliquer les changements
+        if self.ax and self._last_points:
+            self.refresh_display()
+
+    def refresh_display(self) -> None:
+        """Actualise l'affichage du graphique."""
+        if not HAS_MPL or not self.canvas:
+            return
+
+        try:
+            self.canvas.draw()
+        except Exception as e:
+            logger.error(f"Erreur actualisation graphique: {e}")
 
     def load_nlv_single(self):
         if not HAS_MPL:

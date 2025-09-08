@@ -28,27 +28,27 @@ class SearchManager:
         self._search_cache: dict[str, tuple[list[dict[str, Any]], datetime]] = {}
         self._cache_ttl = timedelta(minutes=30)  # Cache valide 30 minutes
         self._last_query = ""
-        
+
     def _is_cache_valid(self, query: str) -> bool:
         """Vérifie si le cache est valide pour une requête."""
         if query not in self._search_cache:
             return False
         _, timestamp = self._search_cache[query]
         return datetime.now() - timestamp < self._cache_ttl
-        
+
     def _get_cached_results(self, query: str) -> list[dict[str, Any]] | None:
         """Récupère les résultats en cache."""
         if self._is_cache_valid(query):
             results, _ = self._search_cache[query]
             return results
         return None
-        
+
     def _cache_results(self, query: str, results: list[dict[str, Any]]) -> None:
         """Met en cache les résultats de recherche."""
         self._search_cache[query] = (results, datetime.now())
         # Nettoyer le cache si trop volumineux
         if len(self._search_cache) > 100:
-            oldest_key = min(self._search_cache.keys(), 
+            oldest_key = min(self._search_cache.keys(),
                            key=lambda k: self._search_cache[k][1])
             del self._search_cache[oldest_key]
 
@@ -57,7 +57,7 @@ class SearchManager:
         if not hasattr(self.app, 'var_search'):
             logger.error("Variable de recherche non initialisée")
             return
-            
+
         query = self.app.var_search.get().strip()
         if not query:
             self.app.set_status("Veuillez entrer un terme de recherche", error=True)
@@ -87,43 +87,44 @@ class SearchManager:
         def worker():
             try:
                 results = self.app.api.search_security(query)
-                
+
                 # Valider les résultats
                 if not isinstance(results, list):
                     results = []
-                    
+
                 # Mettre en cache
                 self._cache_results(query.lower(), results)
-                
+
                 self.app._search_results = results
                 self.app.after(0, self._on_search_complete)
-                
+
                 status_msg = f"{len(results)} résultat(s) trouvé(s)"
                 if len(results) == 0:
                     status_msg += " - essayez un terme différent"
                 self.app.after(0, lambda: self.app.set_status(status_msg))
-                
+
             except Exception as e:
+                error_obj = e  # Capture the exception object
                 logger.error(f"Erreur de recherche pour '{query}': {e}")
-                self.app.after(0, lambda: self._on_search_error(str(e)))
+                self.app.after(0, lambda: self._on_search_error(str(error_obj)))
 
         threading.Thread(target=worker, daemon=True).start()
-        
+
     def _disable_search_ui(self) -> None:
         """Désactive temporairement l'interface de recherche."""
         if hasattr(self.app, 'btn_search'):
             self.app.btn_search.configure(state='disabled', text='Recherche...')
-            
+
     def _enable_search_ui(self) -> None:
         """Réactive l'interface de recherche."""
         if hasattr(self.app, 'btn_search'):
             self.app.btn_search.configure(state='normal', text='Rechercher')
-            
+
     def _on_search_complete(self) -> None:
         """Callback appelé quand la recherche est terminée."""
         self._update_search_results()
         self._enable_search_ui()
-        
+
     def _on_search_error(self, error_msg: str) -> None:
         """Callback appelé en cas d'erreur de recherche."""
         self.app.set_status(f"Erreur de recherche: {error_msg}", error=True)
@@ -156,24 +157,24 @@ class SearchManager:
 
                 # Insérer avec un tag pour coloration conditionnelle
                 tag = 'buyable' if result.get('buyable', False) else 'not_buyable'
-                item_id = self.app.tree_search.insert(
-                    '', 'end', 
+                self.app.tree_search.insert(
+                    '', 'end',
                     values=(symbol, name, exchange, buyable),
                     tags=(tag,)
                 )
                 valid_results += 1
-                
+
             except Exception as e:
                 logger.warning(f"Erreur formatage résultat {i}: {e}")
                 continue
-                
+
         # Configurer les couleurs des tags
         try:
             self.app.tree_search.tag_configure('buyable', foreground='green')
             self.app.tree_search.tag_configure('not_buyable', foreground='gray')
         except Exception:
             pass
-            
+
         if valid_results == 0:
             self._set_search_details("Aucun résultat valide trouvé.")
         else:

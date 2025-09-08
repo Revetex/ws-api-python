@@ -86,7 +86,7 @@ class TradeExecutor:
         # Cooldown trackers
         self._last_trade_ts = 0.0
         self._last_symbol_trade_ts = {}
-        # Optional live executor hook: 
+        # Optional live executor hook:
         # callable(symbol:str, side:str, qty:float|None, price:float, meta:dict) -> None
         self.live_executor = None
         # Load persisted ledger on startup
@@ -561,7 +561,7 @@ class TradeExecutor:
         trades_info = f"{self._trade_count_today}/{self.max_trades_per_day}"
         cooldown_info = f"{self.min_trade_interval_sec:.0f}s"
         sym_cooldown_info = f"{self.symbol_cooldown_sec:.0f}s"
-        
+
         base = (
             f"AutoTrade[{self.mode}] enabled={self.enabled} trades_today={trades_info} "
             f"base={self.base_size:.0f} cooldown={cooldown_info} sym_cd={sym_cooldown_info}"

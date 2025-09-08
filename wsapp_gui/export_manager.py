@@ -10,7 +10,6 @@ Améliorations:
 from __future__ import annotations
 
 import csv
-import json
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -31,19 +30,19 @@ class ExportManager:
     def __init__(self, app: WSApp):
         self.app = app
         self.default_format = 'csv'
-        
+
     def _generate_filename(self, base_name: str, extension: str = 'csv') -> str:
         """Génère un nom de fichier avec timestamp."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         return f"{base_name}_{timestamp}.{extension}"
-        
+
     def _validate_data(self, data: list, data_type: str) -> bool:
         """Valide les données avant export."""
         if not data:
             self.app.set_status(f"Aucune {data_type} à exporter", error=True)
             return False
         return True
-        
+
     def _safe_export(self, export_func, *args, **kwargs) -> bool:
         """Exécute un export avec gestion d'erreurs."""
         try:
@@ -95,7 +94,7 @@ class ExportManager:
                     market_value = float(pos.get('market_value', 0))
                     currency = pos.get('currency') or getattr(self.app, 'base_currency', 'CAD')
                     book_value = float(pos.get('book_value', 0))
-                    
+
                     gain_loss = market_value - book_value if market_value and book_value else 0
                     avg_price = book_value / quantity if quantity and book_value else 0
                     percentage = (gain_loss / book_value * 100) if book_value else 0

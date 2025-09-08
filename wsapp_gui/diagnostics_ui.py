@@ -31,29 +31,29 @@ class DiagnosticsPanel:
         # Barre d'outils
         toolbar = ttk.Frame(tab)
         toolbar.pack(fill=tk.X, padx=4, pady=4)
-        
+
         # Boutons d'action
         self.refresh_button = ttk.Button(
             toolbar, text='Actualiser stats', command=self.refresh
         )
         self.refresh_button.pack(side=tk.LEFT)
-        
+
         ttk.Button(
             toolbar, text='Nettoyage cache', command=self.housekeeping_now
         ).pack(side=tk.LEFT, padx=6)
-        
+
         ttk.Button(
             toolbar, text='Exporter JSON', command=self.export_json
         ).pack(side=tk.LEFT)
-        
+
         # Séparateur
         ttk.Separator(toolbar, orient='vertical').pack(side=tk.LEFT, fill=tk.Y, padx=8)
-        
+
         # Option d'actualisation automatique
         self.auto_refresh_var = tk.BooleanVar()
         ttk.Checkbutton(
-            toolbar, 
-            text='Auto-refresh (30s)', 
+            toolbar,
+            text='Auto-refresh (30s)',
             variable=self.auto_refresh_var,
             command=self._toggle_auto_refresh
         ).pack(side=tk.LEFT)
@@ -61,11 +61,11 @@ class DiagnosticsPanel:
         # Zone de texte avec scrollbar
         text_frame = ttk.Frame(tab)
         text_frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=(0, 4))
-        
+
         self.text = tk.Text(text_frame, height=14, wrap='word', font=('Consolas', 9))
         scrollbar = ttk.Scrollbar(text_frame, orient='vertical', command=self.text.yview)
         self.text.configure(yscrollcommand=scrollbar.set, state=tk.DISABLED)
-        
+
         self.text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
@@ -76,18 +76,18 @@ class DiagnosticsPanel:
             self._set_text(f"Erreur initialisation diagnostics: {e}")
 
     # ------------------- Actions -------------------
-    
+
     def _toggle_auto_refresh(self) -> None:
         """Active/désactive l'actualisation automatique."""
         self.auto_refresh = self.auto_refresh_var.get()
         if self.auto_refresh:
             self._schedule_auto_refresh()
-            
+
     def _schedule_auto_refresh(self) -> None:
         """Programme la prochaine actualisation automatique."""
         if self.auto_refresh and self.app:
             self.app.after(self.refresh_interval, self._auto_refresh_callback)
-            
+
     def _auto_refresh_callback(self) -> None:
         """Callback pour l'actualisation automatique."""
         if self.auto_refresh:
@@ -96,12 +96,12 @@ class DiagnosticsPanel:
             except Exception:
                 pass  # Ignorer les erreurs en mode auto
             self._schedule_auto_refresh()
-    
+
     def _set_text(self, content: str) -> None:
         """Met à jour le contenu du texte."""
         if not self.text:
             return
-            
+
         self.text.configure(state=tk.NORMAL)
         self.text.delete('1.0', tk.END)
         self.text.insert(tk.END, content + '\n')
@@ -118,20 +118,20 @@ class DiagnosticsPanel:
                 'auto_refresh': self.auto_refresh,
             }
         }
-        
+
         # Informations sur l'API manager
         if am:
             try:
                 snap['httpclient_only'] = bool(getattr(am, 'httpclient_only', False))
             except Exception as e:
                 snap['httpclient_error'] = str(e)
-                
+
             # Statistiques du cache
             try:
                 snap['cache'] = am.get_cache_stats()
             except Exception as e:
                 snap['cache_error'] = str(e)
-                
+
             # Statistiques des circuit breakers
             try:
                 snap['circuit_breakers'] = am.get_circuit_breaker_stats()
@@ -139,23 +139,23 @@ class DiagnosticsPanel:
                 snap['circuit_breakers_error'] = str(e)
         else:
             snap['message'] = "API Manager non disponible - fonctionnalités limitées"
-            
+
         return snap
 
     def refresh(self) -> None:
         """Actualise l'affichage des diagnostics."""
         if self.refresh_button:
             self.refresh_button.configure(state='disabled', text='Actualisation...')
-            
+
         try:
             snap = self._snapshot()
             pretty = json.dumps(snap, indent=2, ensure_ascii=False)
             self._set_text(pretty)
-            
+
             # Mettre à jour le statut
             if hasattr(self.app, 'set_status'):
                 self.app.set_status("Diagnostics actualisés")
-                
+
         except Exception as e:
             error_msg = f"Erreur récupération diagnostics: {e}"
             self._set_text(error_msg)
@@ -197,11 +197,11 @@ class DiagnosticsPanel:
             if hasattr(self.app, 'set_status'):
                 self.app.set_status(f"Erreur collecte diagnostics: {e}", error=True)
             return
-            
+
         # Générer un nom de fichier avec timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         default_filename = f"diagnostics_{timestamp}.json"
-        
+
         path = filedialog.asksaveasfilename(
             title='Exporter diagnostics JSON',
             defaultextension='.json',
@@ -210,7 +210,7 @@ class DiagnosticsPanel:
         )
         if not path:
             return
-            
+
         try:
             with open(path, 'w', encoding='utf-8') as f:
                 json.dump(snap, f, ensure_ascii=False, indent=2)
