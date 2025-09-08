@@ -117,7 +117,8 @@ class UIBuilder:
         """Affiche la boîte de dialogue À propos."""
         # Utiliser la bannière d'information non bloquante plutôt qu'une popup
         self.app.set_status(
-            "Wealthsimple Assistant — Application de gestion de portefeuille avec IA (version refactorisée et modulaire)",
+            "Wealthsimple Assistant — Application de gestion de portefeuille avec IA "
+            "(version refactorisée et modulaire)",
             error=False,
         )
 

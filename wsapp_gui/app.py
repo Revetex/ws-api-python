@@ -241,7 +241,8 @@ class WSApp(tk.Tk):
         try:
             if not bool(app_config.get('ui.onboarded', False)):
                 self._show_banner(
-                    "Bienvenue 👋 Astuces: 1) Double-cliquez un symbole pour l'analyser, 2) Ajustez 'Top N' dans Mouvements, 3) Configurez Telegram dans son onglet.",
+                    "Bienvenue 👋 Astuces: 1) Double-cliquez un symbole pour l'analyser, "
+                    "2) Ajustez 'Top N' dans Mouvements, 3) Configurez Telegram dans son onglet.",
                     kind='info',
                     timeout_ms=10000,
                 )
@@ -1182,7 +1183,8 @@ class WSApp(tk.Tk):
         # Astuce d'utilisation
         ttk.Label(
             tab_chat,
-            text="Astuce: Entrée pour envoyer • Ctrl+Entrée aussi • ↑/↓ pour l'historique • Ctrl+K pour effacer",
+            text="Astuce: Entrée pour envoyer • Ctrl+Entrée aussi • ↑/↓ pour l'historique • "
+                 "Ctrl+K pour effacer",
             foreground='gray',
         ).pack(fill=tk.X, padx=8)
         # Séparateur discret entre l'entrée et l'historique
@@ -1926,7 +1928,8 @@ class WSApp(tk.Tk):
 
             _attach_tt_strat(
                 cb,
-                "Auto: backtest rapide sur N barres (Fenêtre auto) choisit la meilleure stratégie récente (MA, RSI, Confluence).",
+                "Auto: backtest rapide sur N barres (Fenêtre auto) choisit la meilleure "
+                "stratégie récente (MA, RSI, Confluence).",
             )
         except Exception:
             pass
@@ -2063,15 +2066,19 @@ class WSApp(tk.Tk):
 
             attach_tooltip(
                 lbl_bw,
-                'Filtre de volatilité (Bollinger bandwidth). 0.00 = aucun filtre; 0.05–0.10 = faible vol; 0.10–0.20 = modérée; >0.20 = forte. Recommandé: 0.05–0.15 pour éviter le bruit.',
+                'Filtre de volatilité (Bollinger bandwidth). 0.00 = aucun filtre; '
+                '0.05–0.10 = faible vol; 0.10–0.20 = modérée; >0.20 = forte. '
+                'Recommandé: 0.05–0.15 pour éviter le bruit.',
             )
             attach_tooltip(
                 sp_bw,
-                'Valeur minimale du Bollinger bandwidth pour générer des signaux. Échelle 0–1. Ex.: 0.08 laisse passer des tendances, 0.15 filtre les ranges trop serrés.',
+                'Valeur minimale du Bollinger bandwidth pour générer des signaux. Échelle 0–1. '
+                'Ex.: 0.08 laisse passer des tendances, 0.15 filtre les ranges trop serrés.',
             )
             attach_tooltip(
                 self.sp_auto_window,
-                "Nombre de barres utilisées par le mode Auto pour évaluer les stratégies (40–1000). Par défaut 160.",
+                "Nombre de barres utilisées par le mode Auto pour évaluer les stratégies "
+                "(40–1000). Par défaut 160.",
             )
         except Exception:
             pass
@@ -2284,7 +2291,8 @@ class WSApp(tk.Tk):
             text=(
                 'Analyse et suggestion basées sur le portefeuille.'
                 if self._adv_enabled
-                else 'Activez le Conseiller dans Préférences > Intelligence Artificielle, ou définissez AI_ENHANCED=1 avant le lancement.'
+                else 'Activez le Conseiller dans Préférences > Intelligence Artificielle, '
+                     'ou définissez AI_ENHANCED=1 avant le lancement.'
             ),
             foreground='gray',
         )
@@ -2519,7 +2527,8 @@ class WSApp(tk.Tk):
                         text=(
                             'Analyse et suggestion basées sur le portefeuille.'
                             if self._adv_enabled
-                            else 'Activez le Conseiller dans Préférences > Intelligence Artificielle, ou définissez AI_ENHANCED=1 avant le lancement.'
+                            else 'Activez le Conseiller dans Préférences > Intelligence '
+                                 'Artificielle, ou définissez AI_ENHANCED=1 avant le lancement.'
                         )
                     )
                 if hasattr(self, 'btn_advisor_analyze') and self.btn_advisor_analyze:
@@ -2542,7 +2551,9 @@ class WSApp(tk.Tk):
             if mode == 'live' and not self._live_confirmed:
                 ok = messagebox.askyesno(
                     'Confirmer le mode LIVE',
-                    "Le mode LIVE n'exécute pas d'ordres réels pour l'instant (stub), mais doit être utilisé avec prudence. Voulez-vous vraiment passer en mode LIVE?",
+                    "Le mode LIVE n'exécute pas d'ordres réels pour l'instant (stub), "
+                    "mais doit être utilisé avec prudence. Voulez-vous vraiment passer "
+                    "en mode LIVE?",
                 )
                 if not ok:
                     self.var_at_mode.set('paper')
@@ -2636,10 +2647,14 @@ class WSApp(tk.Tk):
             )
             pnl_color = "#22c55e" if total_pnl >= 0 else "#ef4444"
 
+            cash_str = format_money(cash, self.base_currency, with_symbol=False)
+            total_value_str = format_money(total_value, self.base_currency, with_symbol=False)
+            pnl_str = format_money(total_pnl, self.base_currency, with_symbol=False)
+            
             summary_text = (
-                f"Cash: {format_money(cash, self.base_currency, with_symbol=False)}  |  "
-                f"Valeur totale: {format_money(total_value, self.base_currency, with_symbol=False)}  |  "
-                f"PnL: {format_money(total_pnl, self.base_currency, with_symbol=False)} ({total_pnl_pct:+.1f}%)  |  "
+                f"Cash: {cash_str}  |  "
+                f"Valeur totale: {total_value_str}  |  "
+                f"PnL: {pnl_str} ({total_pnl_pct:+.1f}%)  |  "
                 f"Positions: {len(snap.get('positions', []))}"
             )
             self.lbl_pf.config(text=summary_text, foreground=pnl_color)
@@ -2650,10 +2665,12 @@ class WSApp(tk.Tk):
                 snap = self._trade_exec.portfolio_snapshot(include_quotes=False)
                 cash = snap.get('cash') or 0.0
                 equity = snap.get('equity') or cash
+                cash_str = format_money(cash, self.base_currency, with_symbol=False)
+                equity_str = format_money(equity, self.base_currency, with_symbol=False)
                 self.lbl_pf.config(
                     text=(
-                        f"Cash: {format_money(cash, self.base_currency, with_symbol=False)}  |  "
-                        f"Équité: {format_money(equity, self.base_currency, with_symbol=False)}  |  "
+                        f"Cash: {cash_str}  |  "
+                        f"Équité: {equity_str}  |  "
                         f"Positions: {len(snap.get('positions', []))} (quotes unavailable)"
                     ),
                     foreground='gray',
@@ -4240,7 +4257,9 @@ class WSApp(tk.Tk):
                                 change = float(quote.get('09. change', 0))
                                 change_pct = quote.get('10. change percent', '0%')
                                 cur = self.base_currency
-                                analysis_prompt += f" Prix: {price:.2f} {cur}, Changement: {change:.2f} {cur} ({change_pct})"
+                                price_info = f"Prix: {price:.2f} {cur}"
+                                change_info = f"Changement: {change:.2f} {cur} ({change_pct})"
+                                analysis_prompt += f" {price_info}, {change_info}"
 
                             if news:
                                 analysis_prompt += f", {len(news)} actualités récentes disponibles"
@@ -4318,7 +4337,8 @@ class WSApp(tk.Tk):
                 bg = pal.get('accent_bg', bg)
                 fg = pal.get('accent', fg)
 
-            # Configure ttk styles for banner (frame + label) to ensure background/foreground are applied
+            # Configure ttk styles for banner (frame + label) to ensure 
+            # background/foreground are applied
             try:
                 style = ttk.Style(self)
                 suffix = 'Error' if kind == 'error' else 'Info'
@@ -4644,7 +4664,8 @@ class WSApp(tk.Tk):
                 except Exception:
                     pass
             self._set_search_details(
-                "Suggestions par défaut: vos positions principales affichées. Lancez une recherche pour plus de titres."
+                "Suggestions par défaut: vos positions principales affichées. "
+                "Lancez une recherche pour plus de titres."
             )
         except Exception:
             pass
@@ -4850,8 +4871,10 @@ class WSApp(tk.Tk):
             )
             status = order.get('status')
             if status == 'filled':
+                filled_qty = order.get('filled_qty')
+                avg_price = order.get('avg_fill_price')
                 self.set_status(
-                    f"Ordre exécuté: {side} {symbol} {order.get('filled_qty')} @ {order.get('avg_fill_price')}"
+                    f"Ordre exécuté: {side} {symbol} {filled_qty} @ {avg_price}"
                 )
             elif status == 'open':
                 self.set_status(f"Ordre en attente: {side} {otype} {symbol}")
@@ -5204,7 +5227,8 @@ class WSApp(tk.Tk):
         """Remplit les tableaux gagnants / perdants / actifs / opportunités.
 
         Priorité:
-          - Si API externe disponible: scan marché canadien (gainers/losers/actives) via Yahoo screener
+          - Si API externe disponible: scan marché canadien (gainers/losers/actives) 
+            via Yahoo screener
           - Sinon: fallback heuristique basé sur PnL des positions du portefeuille
         """
         # Ensure at least one movers tree exists
@@ -5294,9 +5318,11 @@ class WSApp(tk.Tk):
                                 q.get('volume'),
                             ),
                         )
-                        self.set_status(
-                            f"Mouvements (CA): +{len(gainers)} / -{len(losers)} / actifs {len(actives)}"
-                        )
+                        gainer_count = len(gainers)
+                        loser_count = len(losers) 
+                        active_count = len(actives)
+                        status_msg = f"Mouvements (CA): +{gainer_count} / -{loser_count} / actifs {active_count}"
+                        self.set_status(status_msg)
                         # Recolor according to Pct change
                         try:
                             pal = self._palettes[self._theme]

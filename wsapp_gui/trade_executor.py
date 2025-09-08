@@ -86,7 +86,8 @@ class TradeExecutor:
         # Cooldown trackers
         self._last_trade_ts = 0.0
         self._last_symbol_trade_ts = {}
-        # Optional live executor hook: callable(symbol:str, side:str, qty:float|None, price:float, meta:dict) -> None
+        # Optional live executor hook: 
+        # callable(symbol:str, side:str, qty:float|None, price:float, meta:dict) -> None
         self.live_executor = None
         # Load persisted ledger on startup
         self._load_ledger()
@@ -232,9 +233,9 @@ class TradeExecutor:
     ) -> dict[str, Any]:
         """Place an order.
 
-        Behavior in paper mode is intentionally simple and fills immediately when conditions are met
-        using the current reference price. For non-markets where conditions are not met, the order is
-        left unfilled and recorded in the open order list.
+        Behavior in paper mode is intentionally simple and fills immediately when 
+        conditions are met using the current reference price. For non-markets where 
+        conditions are not met, the order is left unfilled and recorded in the open order list.
 
         Returns an order dict with status: 'filled' | 'open' | 'rejected'.
         """
@@ -309,7 +310,8 @@ class TradeExecutor:
                     )
                 # We do not assume a fill in live mode. Mark as submitted.
                 self._log.append(
-                    f"{datetime.now().isoformat()} | LIVE SUBMIT {side.upper()} {otype} {symbol} qty={qty}"
+                    f"{datetime.now().isoformat()} | LIVE SUBMIT {side.upper()} {otype} "
+                    f"{symbol} qty={qty}"
                 )
                 return order
             except Exception as e:
@@ -409,14 +411,16 @@ class TradeExecutor:
             order['avg_fill_price'] = fill_price
             self._trade_count_today += 1
             self._log.append(
-                f"{datetime.now().isoformat()} | {side.upper()} {otype.upper()} {symbol} {exec_qty} @ {fill_price:.2f}"
+                f"{datetime.now().isoformat()} | {side.upper()} {otype.upper()} "
+                f"{symbol} {exec_qty} @ {fill_price:.2f}"
             )
             return order
 
         # Not filled -> keep as open (paper only)
         self._open_orders.append(order)
         self._log.append(
-            f"{datetime.now().isoformat()} | OPEN {side.upper()} {otype.upper()} {symbol} qty={qty} (tif={time_in_force})"
+            f"{datetime.now().isoformat()} | OPEN {side.upper()} {otype.upper()} "
+            f"{symbol} qty={qty} (tif={time_in_force})"
         )
         return order
 
@@ -554,9 +558,13 @@ class TradeExecutor:
         )
 
     def summary(self) -> str:
+        trades_info = f"{self._trade_count_today}/{self.max_trades_per_day}"
+        cooldown_info = f"{self.min_trade_interval_sec:.0f}s"
+        sym_cooldown_info = f"{self.symbol_cooldown_sec:.0f}s"
+        
         base = (
-            f"AutoTrade[{self.mode}] enabled={self.enabled} trades_today={self._trade_count_today}/{self.max_trades_per_day} "
-            f"base={self.base_size:.0f} cooldown={self.min_trade_interval_sec:.0f}s sym_cd={self.symbol_cooldown_sec:.0f}s"
+            f"AutoTrade[{self.mode}] enabled={self.enabled} trades_today={trades_info} "
+            f"base={self.base_size:.0f} cooldown={cooldown_info} sym_cd={sym_cooldown_info}"
         )
         if self.mode == 'paper':
             open_pos = sum(1 for p in self._paper.positions.values() if p.qty > 0)
@@ -622,14 +630,17 @@ class TradeExecutor:
             pos.buy(price, qty)
             self._paper.cash -= cost
             self._trade_count_today += 1
+            confidence_info = getattr(signal, 'confidence', None)
             self._log.append(
-                f"{datetime.now().isoformat()} | BUY {symbol} {qty} @ {price:.2f} (conf={getattr(signal, 'confidence', None)})"
+                f"{datetime.now().isoformat()} | BUY {symbol} {qty} @ {price:.2f} "
+                f"(conf={confidence_info})"
             )
             return True
         # live stub: no-op for safety
         self._trade_count_today += 1
         self._log.append(
-            f"{datetime.now().isoformat()} | LIVE BUY (stub) {symbol} notional {self.base_size:.2f} @ {price:.2f}"
+            f"{datetime.now().isoformat()} | LIVE BUY (stub) {symbol} "
+            f"notional {self.base_size:.2f} @ {price:.2f}"
         )
         try:
             if self.live_executor:
@@ -661,7 +672,8 @@ class TradeExecutor:
             self._paper.cash += proceeds
             self._trade_count_today += 1
             self._log.append(
-                f"{datetime.now().isoformat()} | SELL {symbol} {sell_qty:.4f} @ {price:.2f} (proceeds={proceeds:.2f})"
+                f"{datetime.now().isoformat()} | SELL {symbol} {sell_qty:.4f} @ "
+                f"{price:.2f} (proceeds={proceeds:.2f})"
             )
             return True
         # live stub
