@@ -168,64 +168,64 @@
   "autotrade": {
     "ledger": [
       {
-        "timestamp": 1757268270.539482,
-        "symbol": "SYM009",
-        "kind": "buy",
-        "index": 9
-      },
-      {
-        "timestamp": 1757268270.5394862,
-        "symbol": "SYM005",
-        "kind": "buy",
-        "index": 5
-      },
-      {
-        "timestamp": 1757268270.5394878,
-        "symbol": "SYM008",
-        "kind": "buy",
-        "index": 8
-      },
-      {
-        "timestamp": 1757268270.5394897,
-        "symbol": "SYM007",
-        "kind": "buy",
-        "index": 7
-      },
-      {
-        "timestamp": 1757268270.5394907,
-        "symbol": "SYM006",
-        "kind": "buy",
-        "index": 6
-      },
-      {
-        "timestamp": 1757268270.5394933,
+        "timestamp": 1757283153.3348224,
         "symbol": "SYM002",
         "kind": "buy",
         "index": 2
       },
       {
-        "timestamp": 1757268270.5394952,
+        "timestamp": 1757283153.3348234,
+        "symbol": "SYM000",
+        "kind": "buy",
+        "index": 0
+      },
+      {
+        "timestamp": 1757283153.3348236,
+        "symbol": "SYM006",
+        "kind": "buy",
+        "index": 6
+      },
+      {
+        "timestamp": 1757283153.3348238,
         "symbol": "SYM001",
         "kind": "buy",
         "index": 1
       },
       {
-        "timestamp": 1757268270.5394964,
-        "symbol": "SYM003",
-        "kind": "buy",
-        "index": 3
-      },
-      {
-        "timestamp": 1757268270.5394976,
+        "timestamp": 1757283153.3348246,
         "symbol": "SYM004",
         "kind": "buy",
         "index": 4
       },
       {
-        "timestamp": 1757268270.5394995,
-        "symbol": "SYM000",
+        "timestamp": 1757283153.334825,
+        "symbol": "SYM009",
         "kind": "buy",
-        "index": 0
+        "index": 9
+      },
+      {
+        "timestamp": 1757283153.3348253,
+        "symbol": "SYM007",
+        "kind": "buy",
+        "index": 7
+      },
+      {
+        "timestamp": 1757283153.3348258,
+        "symbol": "SYM003",
+        "kind": "buy",
+        "index": 3
+      },
+      {
+        "timestamp": 1757283153.3348262,
+        "symbol": "SYM005",
+        "kind": "buy",
+        "index": 5
+      },
+      {
+        "timestamp": 1757283153.3348267,
+        "symbol": "SYM008",
+        "kind": "buy",
+        "index": 8
       }
     ],
     "enabled": true,

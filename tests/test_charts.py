@@ -1,8 +1,12 @@
+import os
 import tkinter as tk
 
 import pytest
 
 from wsapp_gui.charts import HAS_MPL, ChartController
+
+# Skip Tk-dependent tests when running headless (no X display)
+HEADLESS = not bool(os.environ.get("DISPLAY")) and os.name != "nt"
 
 
 class DummyAPI:
@@ -31,7 +35,7 @@ class DummyApp:
         pass
 
 
-@pytest.mark.skipif(not HAS_MPL, reason="Matplotlib not available")
+@pytest.mark.skipif(not HAS_MPL or HEADLESS, reason="Matplotlib not available or headless CI")
 def test_chartcontroller_line_chart(monkeypatch):
     app = DummyApp()
     cc = ChartController(app)

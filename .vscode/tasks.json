@@ -177,6 +177,72 @@
 			"isBackground": false,
 			"problemMatcher": [],
 			"group": "none"
+		},
+		{
+			"label": "Lint (ruff)",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"ruff",
+				"check",
+				"."
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "none"
+		},
+		{
+			"label": "Tests (pytest)",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"pytest",
+				"-q"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Tests (pytest)",
+			"type": "shell",
+			"command": "C:/Users/tblan_n3u3vjj/Documents/Blanchet_international/ws-api-python/.venv/Scripts/python.exe",
+			"args": [
+				"-m",
+				"pytest",
+				"-q"
+			],
+			"isBackground": false,
+			"group": "test"
+		},
+		{
+			"label": "Tests (pytest)",
+			"type": "shell",
+			"command": "C:/Users/tblan_n3u3vjj/Documents/Blanchet_international/ws-api-python/.venv/Scripts/python.exe",
+			"args": [
+				"-m",
+				"pytest",
+				"-q",
+				"-k",
+				"order_backend_smoke or test_trade_executor or test_charts"
+			],
+			"isBackground": false,
+			"group": "test"
+		},
+		{
+			"label": "Tests (pytest)",
+			"type": "shell",
+			"command": "C:/Users/tblan_n3u3vjj/Documents/Blanchet_international/ws-api-python/.venv/Scripts/python.exe",
+			"args": [
+				"-m",
+				"pytest",
+				"-q",
+				"tests/test_live_and_cooldowns.py"
+			],
+			"isBackground": false,
+			"group": "test"
 		}
 	]
 }
