@@ -1237,8 +1237,8 @@ class TelegramNotifier:
                             "/autotrade on|off            (activer/désactiver)\n"
                             "/mode paper|live [confirm]   (sécurisé: live exige confirm)\n"
                             "/size N                       (taille base ex: 1000)\n"
-                            "/buy SYM [qty N|$N] [mkt|limit P|stop P|stoplimit S L]\n"
-                            "/sell SYM [qty N|$N] [mkt|limit P|stop P|stoplimit S L]\n"
+                            "/buy SYM [qty N|$N] [mkt|limit P|stop P|stoplimit S L] [tif day|gtc]\n"
+                            "/sell SYM [qty N|$N] [mkt|limit P|stop P|stoplimit S L] [tif day|gtc]\n"
                             "/metrics                      (compteurs API)\n"
                             "/profile SYM1,SYM2 [series]  (profilage rapide)\n"
                             "/provider show|alpha|yahoo    (source marché)\n"
@@ -1425,89 +1425,28 @@ class TelegramNotifier:
                     if _ex is None:
                         self.send_message_to(chat_id or self.chat_id, "Exécuteur indisponible.")
                         return
-                    parts = text.strip().split()
-                    if len(parts) < 2:
-                        self.send_message_to(
-                            chat_id or self.chat_id,
-                            "Usage: /buy SYM [qty N|$N] [mkt|limit P|stop P|stoplimit S L]",
-                        )
+                    try:
+                        from utils.telegram_commands import parse_trade_command  # type: ignore
+
+                        parsed = parse_trade_command(text)
+                    except Exception as e:
+                        self.send_message_to(chat_id or self.chat_id, f"Erreur: {e}")
                         return
-                    side = 'buy' if t.startswith('/buy') else 'sell'
-                    sym = parts[1].upper()
-                    qty = None
-                    notional = None
-                    order_type = 'market'
-                    limit_price = None
-                    stop_price = None
-                    # parse remaining tokens
-                    i = 2
-                    while i < len(parts):
-                        tok = parts[i].lower()
-                        if tok == 'qty' and i + 1 < len(parts):
-                            try:
-                                qty = float(parts[i + 1].replace(',', ''))
-                            except Exception:
-                                pass
-                            i += 2
-                            continue
-                        if tok.startswith('$'):
-                            try:
-                                notional = float(tok[1:].replace(',', ''))
-                            except Exception:
-                                pass
-                            i += 1
-                            continue
-                        if tok in ('mkt', 'market'):
-                            order_type = 'market'
-                            i += 1
-                            continue
-                        if tok == 'limit' and i + 1 < len(parts):
-                            order_type = 'limit'
-                            try:
-                                limit_price = float(parts[i + 1].replace(',', ''))
-                            except Exception:
-                                pass
-                            i += 2
-                            continue
-                        if tok == 'stop' and i + 1 < len(parts):
-                            order_type = 'stop'
-                            try:
-                                stop_price = float(parts[i + 1].replace(',', ''))
-                            except Exception:
-                                pass
-                            i += 2
-                            continue
-                        if tok == 'stoplimit' and i + 2 < len(parts):
-                            order_type = 'stop_limit'
-                            try:
-                                stop_price = float(parts[i + 1].replace(',', ''))
-                                limit_price = float(parts[i + 2].replace(',', ''))
-                            except Exception:
-                                pass
-                            i += 3
-                            continue
-                        # numeric without prefix -> assume qty
-                        try:
-                            val = float(tok.replace(',', ''))
-                            # if previously set notional, treat as qty fallback
-                            if qty is None and val > 0:
-                                qty = val
-                        except Exception:
-                            pass
-                        i += 1
                     try:
                         res = _ex.place_order(
-                            symbol=sym,
-                            side=side,
-                            order_type=order_type,
-                            qty=qty,
-                            notional=notional,
-                            limit_price=limit_price,
-                            stop_price=stop_price,
+                            symbol=parsed['symbol'],
+                            side=parsed['side'],
+                            order_type=parsed['order_type'],
+                            qty=parsed.get('qty'),
+                            notional=parsed.get('notional'),
+                            limit_price=parsed.get('limit_price'),
+                            stop_price=parsed.get('stop_price'),
+                            time_in_force=parsed.get('time_in_force') or 'day',
                         )
                         status = res.get('status') if isinstance(res, dict) else None
                         self.send_message_to(
-                            chat_id or self.chat_id, f"{side.upper()} {sym} -> {status or 'sent'}"
+                            chat_id or self.chat_id,
+                            f"{parsed['side'].upper()} {parsed['symbol']} -> {status or 'sent'}",
                         )
                     except Exception as e:
                         self.send_message_to(chat_id or self.chat_id, f"Erreur: {e}")

@@ -281,13 +281,16 @@ class BacktestPanel:
         self._set_status('Terminé')
         # Text
         stats = self._compute_stats(res)
+        m = res.get('metrics', {}) or {}
+        ts = res.get('trade_stats', {}) or {}
         txt = (
             f"Symbole: {sym}\n"
             f"Cash initial: {res.get('initial_cash', 0):.2f}\n"
             f"Équité finale: {res.get('final_equity', 0):.2f}\n"
             f"Rendement: {res.get('total_return', 0)*100:.2f}%\n"
-            f"Max Drawdown: {stats.get('max_drawdown', 0)*100:.2f}%\n"
-            f"Trades: {len(res.get('trades', []))}\n"
+            f"Annuel: {(m.get('ann_return') or 0)*100:.2f}%  Vol: {(m.get('ann_vol') or 0)*100:.2f}%  Sharpe: {(m.get('sharpe') or 0):.2f}\n"
+            f"Max Drawdown: {max((m.get('max_drawdown') or 0), stats.get('max_drawdown', 0))*100:.2f}%\n"
+            f"Trades: {ts.get('count') or len(res.get('trades', []))}  WinRate: {(ts.get('win_rate') or 0)*100:.1f}%\n"
         )
         try:
             self.txt.configure(state=tk.NORMAL)
